@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, CheckCircle2, Download, XCircle, AlertCircle, Send, RefreshCw, Eye, Sparkles, LogOut, UserCheck } from 'lucide-react';
+import { Play, CheckCircle2, Download, XCircle, AlertCircle, Send, RefreshCw, Eye, Sparkles, LogOut, UserCheck, ChevronDown } from 'lucide-react';
 import { formatSettingDisplay, type QueueResponse, type PrintJob } from '../types';
 
 interface OperatorDeskProps {
@@ -222,56 +222,49 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
                     <span>Download STL</span>
                   </a>
 
-                  {/* If Queued: Start Printing button */}
-                  {job.status === 'queued' && (
-                    <button
-                      onClick={() => handleUpdateStatus(job.id, 'printing')}
-                      disabled={updatingId === job.id}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-bold rounded-lg transition-all shadow-md shadow-amber-500/10"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Start Printing</span>
-                    </button>
-                  )}
-
-                  {/* If Printing: Mark Completed button (Triggers email notification!) */}
-                  {job.status === 'printing' && (
-                    <button
-                      onClick={() => handleUpdateStatus(job.id, 'completed')}
-                      disabled={updatingId === job.id}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all shadow-md shadow-emerald-500/20"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Mark Done & Notify Student</span>
-                    </button>
-                  )}
-
-                  {/* If Completed: Re-queue button */}
-                  {job.status === 'completed' && (
-                    <button
-                      onClick={() => handleUpdateStatus(job.id, 'queued')}
-                      disabled={updatingId === job.id}
-                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-colors"
-                    >
-                      Re-queue
-                    </button>
-                  )}
-
-                  {/* Cancel / Reject */}
-                  {job.status !== 'cancelled' && job.status !== 'completed' && (
-                    <button
-                      onClick={() => {
-                        if (confirm(`Are you sure you want to cancel ${job.title}?`)) {
-                          handleUpdateStatus(job.id, 'cancelled');
-                        }
-                      }}
-                      disabled={updatingId === job.id}
-                      className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Cancel print job"
-                    >
-                      <XCircle className="w-4 h-4" />
-                    </button>
-                  )}
+                  {/* Status Change Dropdown */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">Status:</span>
+                    <div className="relative">
+                      <select
+                        value={job.status}
+                        disabled={updatingId === job.id}
+                        onChange={(e) => {
+                          const newStatus = e.target.value as any;
+                          if (newStatus !== job.status) {
+                            if (newStatus === 'completed') {
+                              const confirmComplete = confirm(
+                                `Mark "${job.title}" as completed? This will email the student at ${job.email}.`
+                              );
+                              if (!confirmComplete) return;
+                            }
+                            handleUpdateStatus(job.id, newStatus);
+                          }
+                        }}
+                        className={`appearance-none pl-3 pr-8 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider border cursor-pointer focus:outline-none transition-all ${
+                          job.status === 'printing'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 focus:border-amber-400'
+                            : job.status === 'completed'
+                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 focus:border-emerald-400'
+                            : job.status === 'cancelled'
+                            ? 'bg-red-500/10 text-red-300 border-red-500/30 focus:border-red-400'
+                            : 'bg-slate-950 text-blue-300 border-slate-700 focus:border-[#CEB888]'
+                        } ${updatingId === job.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <option value="queued" className="bg-slate-900 text-blue-300">Queued</option>
+                        <option value="printing" className="bg-slate-900 text-amber-300">Printing</option>
+                        <option value="completed" className="bg-slate-900 text-emerald-400">Completed (Notify)</option>
+                        <option value="cancelled" className="bg-slate-900 text-red-400">Cancelled</option>
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                        {updatingId === job.id ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}

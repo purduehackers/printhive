@@ -5,7 +5,9 @@ import { sendVerificationEmail, sendJobCompletedEmail } from './mailer';
 import { initPocketBase, getQueueJobs, createJob, updateJobStatus, getJobById, authenticateOperator, verifyOperatorToken } from './pocketbase';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = process.env.DEV_MODE !== undefined 
+  ? process.env.DEV_MODE === 'true' 
+  : process.env.NODE_ENV !== 'production';
 
 // Initialize PocketBase on startup
 initPocketBase().catch((err) => console.warn('[PocketBase] Startup init error:', err));
