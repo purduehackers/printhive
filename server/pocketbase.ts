@@ -19,8 +19,8 @@ export interface PrintJobRecord {
 }
 
 const pbUrl = process.env.POCKETBASE_URL || 'https://pocketbase.amcloud.dev';
-const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL || '';
-const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD || '';
+const userEmail = process.env.POCKETBASE_USER_EMAIL || process.env.POCKETBASE_EMAIL || process.env.POCKETBASE_ADMIN_EMAIL || '';
+const userPassword = process.env.POCKETBASE_USER_PASSWORD || process.env.POCKETBASE_PASSWORD || process.env.POCKETBASE_ADMIN_PASSWORD || '';
 export const COLLECTION_NAME = process.env.POCKETBASE_COLLECTION || 'printhive_v1';
 
 export const pb = new PocketBase(pbUrl);
@@ -56,31 +56,32 @@ function writeLocalJobs(jobs: PrintJobRecord[]) {
 let isPbAuthenticated = false;
 
 /**
- * Authenticate with PocketBase as superuser / admin if credentials exist
+ * Authenticate with PocketBase using the standard 'users' auth collection
  */
 export async function initPocketBase(): Promise<boolean> {
-  if (!adminEmail || !adminPassword) {
-    console.log('[PocketBase] No admin credentials configured in .env. Will attempt public access or local fallback.');
+  if (!userEmail || !userPassword) {
+    console.log('[PocketBase] No user credentials configured in .env. Will attempt public access or local fallback.');
     return false;
   }
 
   try {
-    // PocketBase v0.23+ uses _superusers collection
-    try {
-      await pb.collection('_superusers').authWithPassword(adminEmail, adminPassword);
-      isPbAuthenticated = true;
-      console.log(`[PocketBase] Successfully authenticated as superuser: ${adminEmail}`);
-      return true;
-    } catch {
-      // Fallback for older PocketBase versions
-      await (pb as any).admins.authWithPassword(adminEmail, adminPassword);
-      isPbAuthenticated = true;
-      console.log(`[PocketBase] Successfully authenticated as admin: ${adminEmail}`);
-      return true;
-    }
+    // Authenticate using the standard 'users' collection
+    await pb.collection('users').authWithPassword(userEmail, userPassword);
+    isPbAuthenticated = true;
+    console.log(`[PocketBase] Successfully authenticated via 'users' collection: ${userEmail}`);
+    return true;
   } catch (err: any) {
-    console.warn(`[PocketBase] Superuser auth failed: ${err.message}. Running in hybrid mode.`);
+    console.warn(`[PocketBase] 'users' authentication failed: ${err.message}. Running in hybrid mode.`);
     return false;
+  }
+}
+
+/**
+ * Ensure PocketBase auth token is valid before database operations
+ */
+export async function ensureAuth(): Promise<void> {
+  if (userEmail && userPassword && !pb.authStore.isValid) {
+    await initPocketBase();
   }
 }
 
@@ -96,6 +97,7 @@ export async function getQueueJobs(): Promise<{
 }> {
   // Try PocketBase first
   try {
+    await ensureAuth();
     const records = await pb.collection(COLLECTION_NAME).getFullList({
       sort: '+created',
     });
@@ -199,6 +201,7 @@ export async function createJob(params: {
 
   // Attempt PocketBase create
   try {
+    await ensureAuth();
     const formData = new FormData();
     formData.append('title', localJob.title);
     formData.append('email', localJob.email);
@@ -248,6 +251,7 @@ export async function updateJobStatus(
 
   // Update in PocketBase if possible
   try {
+    await ensureAuth();
     if (newStatus === 'cancelled') {
       try {
         const updated = await pb.collection(COLLECTION_NAME).update(id, { status: newStatus });
