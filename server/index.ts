@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
   infill: 20,
   layerHeight: 0.20,
   material: 'PLA',
-  supports: 'none',
+  supports: 'default',
   color: 'Any',
 };
 

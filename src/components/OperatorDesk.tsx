@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Play, CheckCircle2, Download, XCircle, AlertCircle, Send, RefreshCw, Eye, Sparkles } from 'lucide-react';
-import type { QueueResponse, PrintJob } from '../types';
+import { formatSettingDisplay, type QueueResponse, type PrintJob } from '../types';
 
 interface OperatorDeskProps {
   queueData: QueueResponse | null;
@@ -166,14 +166,17 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                     <span className="text-[11px] text-slate-400 font-mono">Overrides:</span>
                     {Object.keys(job.settingsDiff || {}).length > 0 ? (
-                      Object.entries(job.settingsDiff).map(([k, v]) => (
-                        <span
-                          key={k}
-                          className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[#CEB888] font-mono text-[10px] font-bold"
-                        >
-                          ⚡ {k}: {String(v)}
-                        </span>
-                      ))
+                      Object.entries(job.settingsDiff).map(([k, v]) => {
+                        const item = formatSettingDisplay(k, v);
+                        return (
+                          <span
+                            key={k}
+                            className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[#CEB888] font-mono text-[10px] font-bold"
+                          >
+                            ⚡ {item.label}: {item.value}
+                          </span>
+                        );
+                      })
                     ) : (
                       <span className="text-[10px] text-slate-500 font-mono">Standard Defaults</span>
                     )}

@@ -40,7 +40,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({ onJobSubmitted }
     if (infill !== DEFAULT_SETTINGS.infill) diff['Infill'] = `${infill}%`;
     if (layerHeight !== DEFAULT_SETTINGS.layerHeight) diff['Layer Height'] = `${layerHeight}mm`;
     if (material !== DEFAULT_SETTINGS.material) diff['Material'] = material;
-    if (supports !== DEFAULT_SETTINGS.supports) diff['Supports'] = supports;
+    if (supports !== DEFAULT_SETTINGS.supports) {
+      diff['Supports'] = supports === 'none' ? 'None' : supports === 'tree' ? 'Tree' : 'Default (Operator Decides)';
+    }
     return diff;
   }, [infill, layerHeight, material, supports]);
 
@@ -426,21 +428,35 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({ onJobSubmitted }
             {/* Supports */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-2">
-                Support Structures: <span className="text-[#CEB888] font-bold capitalize">{supports}</span>
+                Support Structures:{' '}
+                <span className="text-[#CEB888] font-bold">
+                  {supports === 'default'
+                    ? 'Default (Operator Decides)'
+                    : supports === 'none'
+                    ? 'None'
+                    : 'Tree'}
+                </span>
               </label>
               <div className="grid grid-cols-3 gap-1.5">
-                {['none', 'normal', 'tree'].map((sup) => (
+                {[
+                  { id: 'none', label: 'None' },
+                  { id: 'default', label: 'Default (Operator Decides)' },
+                  { id: 'tree', label: 'Tree' },
+                ].map((sup) => (
                   <button
-                    key={sup}
+                    key={sup.id}
                     type="button"
-                    onClick={() => setSupports(sup)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all capitalize ${
-                      supports === sup
+                    onClick={() => setSupports(sup.id)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all text-center ${
+                      supports === sup.id
                         ? 'bg-[#CEB888] text-slate-950 border-[#CEB888] font-bold'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
                     }`}
                   >
-                    {sup} {sup === DEFAULT_SETTINGS.supports && <span className="text-[10px] opacity-75">(Def)</span>}
+                    <span className="block truncate">{sup.label}</span>
+                    {sup.id === DEFAULT_SETTINGS.supports && (
+                      <span className="text-[10px] block opacity-75 font-normal">(Def)</span>
+                    )}
                   </button>
                 ))}
               </div>

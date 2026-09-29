@@ -33,6 +33,24 @@ export const DEFAULT_SETTINGS: PrintSettings = {
   infill: 20,
   layerHeight: 0.20,
   material: 'PLA',
-  supports: 'none',
+  supports: 'default',
   color: 'Any',
 };
+
+export function formatSettingDisplay(key: string, value: any): { label: string; value: string } {
+  const normKey = key.toLowerCase();
+  if (normKey === 'supports') {
+    const valStr = String(value).toLowerCase();
+    const formattedVal =
+      valStr === 'default'
+        ? 'Default (Operator Decides)'
+        : valStr === 'none'
+        ? 'None'
+        : valStr === 'tree'
+        ? 'Tree'
+        : String(value);
+    return { label: 'Supports', value: formattedVal };
+  }
+  return { label: key.charAt(0).toUpperCase() + key.slice(1), value: String(value) };
+}
+

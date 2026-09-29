@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, PlayCircle, CheckCircle2, RefreshCw, FileCode, Layers, Inbox, AlertCircle, ArrowUpRight } from 'lucide-react';
-import type { QueueResponse, PrintJob } from '../types';
+import { formatSettingDisplay, type QueueResponse, type PrintJob } from '../types';
 
 interface LiveQueueProps {
   queueData: QueueResponse | null;
@@ -124,14 +124,17 @@ export const LiveQueue: React.FC<LiveQueueProps> = ({ queueData, onRefresh, load
                     <div className="flex items-center gap-2 flex-wrap pt-1">
                       <span className="text-xs font-semibold text-slate-300">Settings:</span>
                       {Object.keys(job.settingsDiff || {}).length > 0 ? (
-                        Object.entries(job.settingsDiff).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[#CEB888] font-mono text-[11px] font-bold"
-                          >
-                            ⚡ {k}: {String(v)}
-                          </span>
-                        ))
+                        Object.entries(job.settingsDiff).map(([k, v]) => {
+                          const item = formatSettingDisplay(k, v);
+                          return (
+                            <span
+                              key={k}
+                              className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-[#CEB888] font-mono text-[11px] font-bold"
+                            >
+                              ⚡ {item.label}: {item.value}
+                            </span>
+                          );
+                        })
                       ) : (
                         <span className="text-xs text-slate-500 font-mono">Standard Defaults</span>
                       )}
@@ -227,14 +230,17 @@ export const LiveQueue: React.FC<LiveQueueProps> = ({ queueData, onRefresh, load
                     {/* Non-Default Settings Pills */}
                     <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                       {Object.keys(job.settingsDiff || {}).length > 0 ? (
-                        Object.entries(job.settingsDiff).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/80 text-amber-300 font-mono text-[10px]"
-                          >
-                            {k}: {String(v)}
-                          </span>
-                        ))
+                        Object.entries(job.settingsDiff).map(([k, v]) => {
+                          const item = formatSettingDisplay(k, v);
+                          return (
+                            <span
+                              key={k}
+                              className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/80 text-amber-300 font-mono text-[10px]"
+                            >
+                              {item.label}: {item.value}
+                            </span>
+                          );
+                        })
                       ) : (
                         <span className="text-[10px] text-slate-500 font-mono">Default settings</span>
                       )}
