@@ -71,7 +71,7 @@ const server = Bun.serve({
       if (url.pathname === '/api/health' && req.method === 'GET') {
         return Response.json({
           status: 'ok',
-          service: 'PrintHive Simple API',
+          service: 'PrintHive V1 API',
           pocketbaseUrl: process.env.POCKETBASE_URL || 'https://pocketbase.amcloud.dev',
           devMode: isDev,
         }, { headers: corsHeaders });
@@ -330,5 +330,5 @@ const server = Bun.serve({
   },
 });
 
-console.log(`🚀 PrintHive Simple Server running at http://localhost:${PORT}`);
+console.log(`🚀 PrintHive V1 Server running at http://localhost:${PORT}`);
 console.log(`📡 Connected to PocketBase at: ${process.env.POCKETBASE_URL || 'https://pocketbase.amcloud.dev'}`);

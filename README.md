@@ -1,8 +1,8 @@
-# PrintHive Simple (Purdue 3D Print Queue)
+# PrintHive V1 (Purdue 3D Print Queue)
 
-A streamlined, modern 3D print queue and submission portal built specifically for university makerspaces (Purdue University).
+A streamlined, modern 3D print queue and submission portal built specifically for Purdue University makerspaces.
 
-Replaces the complex optimization engine of PH-printingv2 with a clean, fast, and intuitive queue workflow.
+A clean, fast, and intuitive queue workflow.
 
 ---
 
