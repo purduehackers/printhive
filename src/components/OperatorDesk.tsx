@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Play, CheckCircle2, Download, XCircle, AlertCircle, Send, RefreshCw, Eye, Sparkles } from 'lucide-react';
+import { Play, CheckCircle2, Download, XCircle, AlertCircle, Send, RefreshCw, Eye, Sparkles, LogOut, UserCheck } from 'lucide-react';
 import { formatSettingDisplay, type QueueResponse, type PrintJob } from '../types';
 
 interface OperatorDeskProps {
   queueData: QueueResponse | null;
   onRefresh: () => void;
+  operatorUser: { id: string; email: string; name?: string } | null;
+  onLogout: () => void;
 }
 
-export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh }) => {
+export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh, operatorUser, onLogout }) => {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'queued' | 'printing' | 'completed'>('all');
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
@@ -19,9 +21,13 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
   const handleUpdateStatus = async (jobId: string, newStatus: 'queued' | 'printing' | 'completed' | 'cancelled') => {
     setUpdatingId(jobId);
     try {
+      const token = localStorage.getItem('printhive_operator_token') || '';
       const res = await fetch(`/api/jobs/${jobId}/status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -92,13 +98,28 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {operatorUser && (
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-xs font-mono text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span className="text-slate-200 font-semibold">{operatorUser.email}</span>
+            </div>
+          )}
+
           <button
             onClick={onRefresh}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition-colors"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh Desk</span>
+            <span>Refresh</span>
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-semibold rounded-lg transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
           </button>
         </div>
       </div>

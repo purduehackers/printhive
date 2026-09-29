@@ -282,3 +282,66 @@ export function getJobById(id: string): PrintJobRecord | null {
   const allJobs = readLocalJobs();
   return allJobs.find((j) => j.id === id) || null;
 }
+
+/**
+ * Authenticate staff operator using PocketBase 'users' collection
+ */
+export async function authenticateOperator(
+  identity: string,
+  password: string
+): Promise<{ success: boolean; token?: string; user?: any; error?: string }> {
+  try {
+    const res = await fetch(`${pbUrl}/api/collections/users/auth-with-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identity, password }),
+    });
+
+    const data: any = await res.json();
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data.message || 'Invalid username/email or password.',
+      };
+    }
+
+    return {
+      success: true,
+      token: data.token,
+      user: {
+        id: data.record.id,
+        email: data.record.email,
+        name: data.record.name || data.record.email,
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: 'Failed to connect to PocketBase authentication service.',
+    };
+  }
+}
+
+/**
+ * Verify whether an operator token is valid with PocketBase 'users' auth
+ */
+export async function verifyOperatorToken(authHeader: string): Promise<boolean> {
+  if (!authHeader) return false;
+  try {
+    const cleanToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!cleanToken) return false;
+
+    const res = await fetch(`${pbUrl}/api/collections/users/auth-refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: cleanToken,
+      },
+    });
+
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+

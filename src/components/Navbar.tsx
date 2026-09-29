@@ -1,14 +1,15 @@
 import React from 'react';
-import { Layers, ListOrdered, ShieldCheck, Database, HardDriveDownload } from 'lucide-react';
+import { Layers, ListOrdered, ShieldCheck, Database, HardDriveDownload, Lock } from 'lucide-react';
 import type { QueueResponse } from '../types';
 
 interface NavbarProps {
   activeTab: 'submit' | 'queue' | 'operator';
   setActiveTab: (tab: 'submit' | 'queue' | 'operator') => void;
   queueData: QueueResponse | null;
+  operatorUser: { id: string; email: string; name?: string } | null;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, queueData }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, queueData, operatorUser }) => {
   const printingCount = queueData?.currentlyPrinting.length || 0;
   const queuedCount = queueData?.nextInQueue.length || 0;
   const isPocketBase = queueData?.source === 'pocketbase';
@@ -78,9 +79,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, queueDa
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            {operatorUser ? (
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <Lock className="w-3.5 h-3.5 opacity-70" />
+            )}
             <span className="hidden sm:inline">Operator Desk</span>
             <span className="sm:hidden">Staff</span>
+            {operatorUser && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            )}
           </button>
         </nav>
 

@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { isPurdueEmail, issueVerificationCode, verifyCode, isEmailVerified, consumeVerification } from './verification';
 import { sendVerificationEmail, sendJobCompletedEmail } from './mailer';
-import { initPocketBase, getQueueJobs, createJob, updateJobStatus, getJobById } from './pocketbase';
+import { initPocketBase, getQueueJobs, createJob, updateJobStatus, getJobById, authenticateOperator, verifyOperatorToken } from './pocketbase';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const isDev = process.env.NODE_ENV !== 'production';
@@ -132,6 +132,39 @@ const server = Bun.serve({
           valid: true,
           message: 'Purdue email verified successfully.',
         }, { headers: corsHeaders });
+      }
+
+      // -------------------------------------------------------------
+      // API: Operator Login (PocketBase 'users' auth collection)
+      // -------------------------------------------------------------
+      if (url.pathname === '/api/auth/operator/login' && req.method === 'POST') {
+        const body = await req.json().catch(() => ({}));
+        const identity = (body.identity || body.email || '').trim();
+        const password = (body.password || '').trim();
+
+        if (!identity || !password) {
+          return Response.json({ error: 'Username/email and password are required.' }, { status: 400, headers: corsHeaders });
+        }
+
+        const result = await authenticateOperator(identity, password);
+        if (!result.success) {
+          return Response.json({ error: result.error || 'Invalid credentials' }, { status: 401, headers: corsHeaders });
+        }
+
+        return Response.json({
+          success: true,
+          token: result.token,
+          user: result.user,
+        }, { headers: corsHeaders });
+      }
+
+      // -------------------------------------------------------------
+      // API: Verify Operator Session Token
+      // -------------------------------------------------------------
+      if (url.pathname === '/api/auth/operator/verify' && req.method === 'GET') {
+        const authHeader = req.headers.get('Authorization') || '';
+        const isValid = await verifyOperatorToken(authHeader);
+        return Response.json({ valid: isValid }, { headers: corsHeaders });
       }
 
       // -------------------------------------------------------------

@@ -3,12 +3,29 @@ import { Navbar } from './components/Navbar';
 import { SubmissionForm } from './components/SubmissionForm';
 import { LiveQueue } from './components/LiveQueue';
 import { OperatorDesk } from './components/OperatorDesk';
+import { OperatorLogin } from './components/OperatorLogin';
 import type { QueueResponse } from './types';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'submit' | 'queue' | 'operator'>('submit');
   const [queueData, setQueueData] = useState<QueueResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Operator Auth state persisted in localStorage
+  const [operatorUser, setOperatorUser] = useState<{ id: string; email: string; name?: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem('printhive_operator_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem('printhive_operator_token');
+    localStorage.removeItem('printhive_operator_user');
+    setOperatorUser(null);
+  };
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -35,7 +52,12 @@ export function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
       {/* Top Navbar */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} queueData={queueData} />
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        queueData={queueData}
+        operatorUser={operatorUser}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1">
@@ -58,10 +80,20 @@ export function App() {
         )}
 
         {activeTab === 'operator' && (
-          <OperatorDesk
-            queueData={queueData}
-            onRefresh={fetchQueue}
-          />
+          operatorUser ? (
+            <OperatorDesk
+              queueData={queueData}
+              onRefresh={fetchQueue}
+              operatorUser={operatorUser}
+              onLogout={handleLogout}
+            />
+          ) : (
+            <OperatorLogin
+              onLoginSuccess={(user) => {
+                setOperatorUser(user);
+              }}
+            />
+          )
         )}
       </main>
 
