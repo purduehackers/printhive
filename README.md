@@ -25,7 +25,7 @@ A clean, fast, and intuitive queue workflow.
    - Presets for Infill (20% default), Layer Height (0.20mm default), Material (PLA default), and Supports (None default).
    - Only **non-default settings** are saved to the database (e.g. `{"infill": 35, "material": "PETG"}`), keeping records lightweight and clear.
 
-5. **PocketBase Integration (`pocketbase.amcloud.dev`)**:
+5. **PocketBase Integration (`pbj.amcloud.dev`)**:
    - Direct integration with PocketBase server for persistent storage of print jobs, STL files, and settings.
    - Includes local storage fallback with zero-downtime queue resilience.
 
@@ -46,7 +46,7 @@ A clean, fast, and intuitive queue workflow.
 - **Frontend**: React 19, Tailwind CSS v4, Three.js, Lucide Icons
 - **Bundler**: Vite 8
 - **Backend**: Bun.serve native HTTP server & API
-- **Database**: [PocketBase](https://pocketbase.io) (`https://pocketbase.amcloud.dev`)
+- **Database**: [PocketBase](https://pocketbase.io) (`https://pbj.amcloud.dev`)
 - **Mailer**: Nodemailer (SMTP with Dev/Console fallback)
 
 ---
@@ -54,17 +54,21 @@ A clean, fast, and intuitive queue workflow.
 ## Quick Start
 
 ### 1. Install Dependencies
+
 ```bash
 bun install
 ```
 
 ### 2. Environment Configuration
+
 Copy `.env.example` to `.env`:
+
 ```bash
 cp .env.example .env
 ```
 
 Configure your environment variables in `.env`:
+
 ```env
 # Server
 PORT=3001
@@ -72,9 +76,9 @@ NODE_ENV=development
 DEV_MODE=true
 
 # PocketBase
-POCKETBASE_URL=https://pocketbase.amcloud.dev
-POCKETBASE_ADMIN_EMAIL=admin@amcloud.dev
-POCKETBASE_ADMIN_PASSWORD=your_password
+POCKETBASE_URL=https://pbj.amcloud.dev
+POCKETBASE_USER_EMAIL=admin@amcloud.dev
+POCKETBASE_USER_PASSWORD=your_password
 
 # Email Notifications (SMTP)
 SMTP_HOST=smtp.gmail.com
@@ -87,34 +91,39 @@ SMTP_FROM="PrintHive Purdue <noreply@purdue.edu>"
 > **Note for Local Testing**: If SMTP credentials are empty or `DEV_MODE=true`, verification codes and completion notices are printed directly to the server terminal and displayed in a handy dev toast on the web page.
 
 ### 3. Run in Development Mode
+
 ```bash
 bun run dev
 ```
+
 - Web UI: [http://localhost:3000](http://localhost:3000)
 - API Server: [http://localhost:3001](http://localhost:3001)
 
 ### 4. Build and Run in Production
+
 ```bash
 bun run build
 bun start
 ```
+
 The unified server will serve both the web application and the API at [http://localhost:3001](http://localhost:3001).
 
 ---
 
 ## API Reference
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/api/health` | `GET` | Health check and server status |
-| `/api/auth/send-code` | `POST` | Validates Purdue email and dispatches 6-digit code |
-| `/api/auth/verify-code` | `POST` | Validates entered 6-digit verification code |
-| `/api/jobs` | `GET` | Returns currently printing, next in queue, and completed jobs |
-| `/api/jobs` | `POST` | Uploads STL, verifies code, and adds job to queue |
-| `/api/jobs/:id/status` | `POST` | Updates job status (`printing`, `completed`, `cancelled`) and triggers completion email |
-| `/api/jobs/:id/file` | `GET` | Downloads the uploaded STL file |
+| Endpoint                | Method | Description                                                                             |
+| :---------------------- | :----- | :-------------------------------------------------------------------------------------- |
+| `/api/health`           | `GET`  | Health check and server status                                                          |
+| `/api/auth/send-code`   | `POST` | Validates Purdue email and dispatches 6-digit code                                      |
+| `/api/auth/verify-code` | `POST` | Validates entered 6-digit verification code                                             |
+| `/api/jobs`             | `GET`  | Returns currently printing, next in queue, and completed jobs                           |
+| `/api/jobs`             | `POST` | Uploads STL, verifies code, and adds job to queue                                       |
+| `/api/jobs/:id/status`  | `POST` | Updates job status (`printing`, `completed`, `cancelled`) and triggers completion email |
+| `/api/jobs/:id/file`    | `GET`  | Downloads the uploaded STL file                                                         |
 
 ---
 
 ## License
+
 MIT
