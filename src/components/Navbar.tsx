@@ -31,7 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, queueDa
                 Print<span className="text-[#CEB888]">Hive</span>
               </span>
               <span className="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 text-[#CEB888] border border-amber-500/20 font-semibold">
-                v2 Simple
+                V1
               </span>
             </div>
             <p className="text-xs text-slate-400">Purdue Makerspace 3D Print Queue</p>
