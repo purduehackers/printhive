@@ -102,7 +102,7 @@ export async function getQueueJobs(): Promise<{
       sort: '+created',
     });
 
-    if (records && records.length > 0) {
+    if (Array.isArray(records)) {
       const all: PrintJobRecord[] = records.map((r: any) => {
         let diff = {};
         let full = {};
@@ -145,7 +145,7 @@ export async function getQueueJobs(): Promise<{
       };
     }
   } catch (err: any) {
-    // If PocketBase fetch fails, use local backup
+    console.warn('[PocketBase] Failed to fetch from PocketBase:', err.message);
   }
 
   // Fallback to local store
