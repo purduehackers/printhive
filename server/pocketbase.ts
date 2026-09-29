@@ -21,6 +21,7 @@ export interface PrintJobRecord {
 const pbUrl = process.env.POCKETBASE_URL || 'https://pocketbase.amcloud.dev';
 const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL || '';
 const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD || '';
+export const COLLECTION_NAME = process.env.POCKETBASE_COLLECTION || 'printhive_v1';
 
 export const pb = new PocketBase(pbUrl);
 
@@ -95,7 +96,7 @@ export async function getQueueJobs(): Promise<{
 }> {
   // Try PocketBase first
   try {
-    const records = await pb.collection('print_jobs').getFullList({
+    const records = await pb.collection(COLLECTION_NAME).getFullList({
       sort: '+created',
     });
 
@@ -210,7 +211,7 @@ export async function createJob(params: {
     const blob = new Blob([params.fileBuffer], { type: 'application/octet-stream' });
     formData.append('file', blob, params.fileName);
 
-    const pbRecord = await pb.collection('print_jobs').create(formData);
+    const pbRecord = await pb.collection(COLLECTION_NAME).create(formData);
     
     if (pbRecord) {
       localJob.id = pbRecord.id;
@@ -247,11 +248,21 @@ export async function updateJobStatus(
 
   // Update in PocketBase if possible
   try {
-    const updated = await pb.collection('print_jobs').update(id, {
-      status: newStatus,
-    });
-    if (updated && job) {
-      job.updated = updated.updated;
+    if (newStatus === 'cancelled') {
+      try {
+        const updated = await pb.collection(COLLECTION_NAME).update(id, { status: newStatus });
+        if (updated && job) job.updated = updated.updated;
+      } catch {
+        // If PocketBase schema doesn't have 'cancelled' in its select values, delete the record from queue
+        await pb.collection(COLLECTION_NAME).delete(id).catch(() => {});
+      }
+    } else {
+      const updated = await pb.collection(COLLECTION_NAME).update(id, {
+        status: newStatus,
+      });
+      if (updated && job) {
+        job.updated = updated.updated;
+      }
     }
   } catch (err: any) {
     // PocketBase update warning
