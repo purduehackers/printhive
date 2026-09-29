@@ -1,0 +1,34 @@
+{
+  "name": "printhive-simple",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev:server": "bun --watch server/index.ts",
+    "dev:client": "vite --port 3000",
+    "dev": "concurrently -n \"API,WEB\" -c \"yellow,cyan\" \"bun run dev:server\" \"bun run dev:client\"",
+    "build": "vite build",
+    "start": "bun server/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/nodemailer": "^8.0.2",
+    "lucide-react": "^1.48.0",
+    "nodemailer": "^10.0.12",
+    "pocketbase": "^0.28.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "bun-types": "^1.4.2",
+    "concurrently": "^10.0.5",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
