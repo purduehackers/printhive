@@ -211,7 +211,7 @@ export async function createJob(params: {
     if (params.notes) formData.append('notes', params.notes);
     
     // Convert Buffer to Blob for PocketBase FormData upload
-    const blob = new Blob([params.fileBuffer], { type: 'application/octet-stream' });
+    const blob = new Blob([new Uint8Array(params.fileBuffer)], { type: 'application/octet-stream' });
     formData.append('file', blob, params.fileName);
 
     const pbRecord = await pb.collection(COLLECTION_NAME).create(formData);

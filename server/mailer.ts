@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 
 interface MailerConfig {
   host: string;
@@ -18,11 +18,11 @@ const config: MailerConfig = {
   from: process.env.SMTP_FROM || 'PrintHive Purdue <noreply@purdue.edu>',
 };
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: Transporter | null = null;
 
 if (config.user && config.pass) {
   try {
-    transporter = nodemailer.createTransporter({
+    transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
       secure: config.secure,
