@@ -30,7 +30,7 @@ export interface QueueResponse {
 }
 
 export const DEFAULT_SETTINGS: PrintSettings = {
-  infill: 20,
+  infill: 15,
   layerHeight: 0.20,
   material: 'PLA',
   supports: 'default',

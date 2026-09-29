@@ -402,26 +402,20 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({ onJobSubmitted }
               </div>
             </div>
 
-            {/* Material */}
+            {/* Material - Only PLA Available */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-2">
-                Filament Material: <span className="text-[#CEB888] font-bold">{material}</span>
+                Filament Material: <span className="text-[#CEB888] font-bold">PLA</span>
               </label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {['PLA', 'PETG', 'ABS', 'TPU'].map((mat) => (
-                  <button
-                    key={mat}
-                    type="button"
-                    onClick={() => setMaterial(mat)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all ${
-                      material === mat
-                        ? 'bg-[#CEB888] text-slate-950 border-[#CEB888] font-bold'
-                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    {mat} {mat === DEFAULT_SETTINGS.material && <span className="text-[10px] opacity-75">(Def)</span>}
-                  </button>
-                ))}
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                  <span className="text-xs font-bold text-slate-100 font-mono">PLA</span>
+                  <span className="text-[11px] text-slate-400">Standard</span>
+                </div>
+                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Only Material Available
+                </span>
               </div>
             </div>
 

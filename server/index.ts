@@ -12,7 +12,7 @@ initPocketBase().catch((err) => console.warn('[PocketBase] Startup init error:',
 
 // Standard 3D print defaults
 const DEFAULT_SETTINGS = {
-  infill: 20,
+  infill: 15,
   layerHeight: 0.20,
   material: 'PLA',
   supports: 'default',
