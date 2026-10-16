@@ -30,7 +30,12 @@ export function App() {
   const fetchQueue = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/jobs');
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem('printhive_operator_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch('/api/jobs', { headers });
       if (res.ok) {
         const data = await res.json();
         setQueueData(data);

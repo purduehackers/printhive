@@ -18,6 +18,31 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
   const allJobs = queueData?.all || [];
   const filteredJobs = allJobs.filter((j) => (filter === 'all' ? true : j.status === filter));
 
+  const handleDownload = async (jobId: string, fileName: string) => {
+    try {
+      const token = localStorage.getItem('printhive_operator_token') || '';
+      const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Failed to download STL file.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || 'model.stl';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Network error downloading file.');
+    }
+  };
+
   const handleUpdateStatus = async (jobId: string, newStatus: 'queued' | 'printing' | 'completed' | 'cancelled') => {
     setUpdatingId(jobId);
     try {
@@ -213,14 +238,14 @@ export const OperatorDesk: React.FC<OperatorDeskProps> = ({ queueData, onRefresh
                 {/* Operator Actions */}
                 <div className="flex items-center gap-2 flex-wrap shrink-0">
                   {/* Download STL */}
-                  <a
-                    href={`/api/jobs/${job.id}/file`}
-                    download={job.fileName}
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(job.id, job.fileName)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold rounded-lg border border-slate-700 transition-colors"
                   >
                     <Download className="w-3.5 h-3.5 text-[#CEB888]" />
                     <span>Download STL</span>
-                  </a>
+                  </button>
 
                   {/* Status Change Dropdown */}
                   <div className="flex items-center gap-2">

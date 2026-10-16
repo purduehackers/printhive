@@ -284,6 +284,21 @@ export function getJobById(id: string): PrintJobRecord | null {
 }
 
 /**
+ * Operator allowlist. Only these PocketBase `users` accounts may act as operators.
+ * Configure via OPERATOR_EMAILS (comma-separated); defaults to the server's own PocketBase account.
+ */
+const OPERATOR_EMAILS = new Set(
+  (process.env.OPERATOR_EMAILS || userEmail)
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+export function isOperatorEmail(email: unknown): boolean {
+  return typeof email === 'string' && OPERATOR_EMAILS.has(email.trim().toLowerCase());
+}
+
+/**
  * Authenticate staff operator using PocketBase 'users' collection
  */
 export async function authenticateOperator(
@@ -301,7 +316,15 @@ export async function authenticateOperator(
     if (!res.ok) {
       return {
         success: false,
-        error: data.message || 'Invalid username/email or password.',
+        error: 'Invalid username/email or password.',
+      };
+    }
+
+    if (!isOperatorEmail(data.record?.email)) {
+      // Valid PocketBase user, but not an authorized operator. Use the same generic message.
+      return {
+        success: false,
+        error: 'Invalid username/email or password.',
       };
     }
 
@@ -322,15 +345,25 @@ export async function authenticateOperator(
   }
 }
 
+// Short-lived cache of verified tokens so the 6s queue poll doesn't hit PocketBase every time
+const TOKEN_CACHE_TTL_MS = 60 * 1000;
+const tokenCache = new Map<string, { valid: boolean; expiresAt: number }>();
+
 /**
  * Verify whether an operator token is valid with PocketBase 'users' auth
+ * AND belongs to an allowlisted operator account.
  */
 export async function verifyOperatorToken(authHeader: string): Promise<boolean> {
   if (!authHeader) return false;
-  try {
-    const cleanToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (!cleanToken) return false;
+  const cleanToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!cleanToken) return false;
 
+  const now = Date.now();
+  const cached = tokenCache.get(cleanToken);
+  if (cached && cached.expiresAt > now) return cached.valid;
+
+  let valid = false;
+  try {
     const res = await fetch(`${pbUrl}/api/collections/users/auth-refresh`, {
       method: 'POST',
       headers: {
@@ -339,9 +372,19 @@ export async function verifyOperatorToken(authHeader: string): Promise<boolean> 
       },
     });
 
-    return res.ok;
+    if (res.ok) {
+      const data: any = await res.json().catch(() => ({}));
+      valid = isOperatorEmail(data.record?.email);
+    }
   } catch {
+    // Network failure: don't cache, fail closed
     return false;
   }
+
+  tokenCache.set(cleanToken, { valid, expiresAt: now + TOKEN_CACHE_TTL_MS });
+  if (tokenCache.size > 1000) {
+    for (const [k, v] of tokenCache) if (v.expiresAt <= now) tokenCache.delete(k);
+  }
+  return valid;
 }
 
