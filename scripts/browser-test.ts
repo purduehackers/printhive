@@ -10,7 +10,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(h.origin);
-  await expect(page.getByRole('heading', { name: /Big ideas/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'HIVE 3d printing', exact: true })).toBeVisible();
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/queue-desktop.png', fullPage: true });
   await page.goto(h.origin + '/submit');
@@ -23,16 +23,16 @@ try {
   await page.getByLabel('Purdue email').fill('browser@purdue.edu');
   await page.screenshot({ path: 'test-results/submit-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your inbox.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
   const link = h.messages[0].match(/http[^\s]+\/confirm\?token=[^\s]+/)![0];
   await page.goto(link); await expect(page.getByRole('button', { name: 'Confirm print' })).toBeVisible();
   await page.getByRole('button', { name: 'Confirm print' }).click();
-  await expect(page.getByRole('heading', { name: 'You’re in the queue.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Print queued' })).toBeVisible();
   await page.goto(h.origin); await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toBeVisible();
   await page.goto(h.origin + '/operator/login');
   await page.getByLabel('Username').fill('operator'); await page.getByLabel('Password', { exact: true }).fill('test-password-12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Keep the hive moving.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Print jobs' })).toBeVisible();
   await page.getByRole('link', { name: 'Manage Browser test bracket' }).click();
   await page.getByRole('button', { name: 'Update status' }).click();
   await expect(page.getByText('Status saved and notification email accepted for delivery.')).toBeVisible();

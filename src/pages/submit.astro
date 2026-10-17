@@ -2,4 +2,4 @@
 import Layout from '../layouts/Layout.astro';
 import SubmissionForm from '../components/SubmissionForm';
 ---
-<Layout title="Submit a print" active="submit"><div class="page-heading"><a href="/" class="back-link">← Back to the queue</a><p class="eyebrow">Let’s make something</p><h1>From your screen<br />to your hands.</h1><p>Bring the STL. We’ll bring the layers.</p></div><SubmissionForm client:load /><noscript><p class="notice">JavaScript is required to upload your STL and preview it. Enable JavaScript to submit a print.</p></noscript></Layout>
+<Layout title="Submit a print" active="submit"><div class="page-heading"><h1>Submit a print</h1></div><SubmissionForm client:load /><noscript><p class="notice">Enable JavaScript to upload and preview your STL.</p></noscript></Layout>

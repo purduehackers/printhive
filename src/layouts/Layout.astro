@@ -1,14 +1,14 @@
 ---
 import '../styles/global.css';
 interface Props { title?: string; active?: string }
-const { title = 'The print queue', active = '' } = Astro.props;
+const { title = 'Print queue', active = '' } = Astro.props;
 ---
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="From an idea to a physical thing. Submit an STL, choose your settings, and follow the PrintHive 3D printing queue." />
+    <meta name="description" content="Submit STL files and manage the Purdue PrintHive 3D printing queue." />
     <meta name="color-scheme" content="light" />
     <title>{title} · PrintHive</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -17,9 +17,8 @@ const { title = 'The print queue', active = '' } = Astro.props;
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="PrintHive home"><svg width="32" height="36" viewBox="0 0 32 36" fill="none" aria-hidden="true"><path d="M16 2 30 10v16L16 34 2 26V10L16 2Z" stroke="currentColor" stroke-width="2.5"/><path d="m2 10 14 8 14-8M16 18v16M9 6l14 8v9" stroke="currentColor" stroke-width="2.5"/></svg><span>Print<span class="brand-light">Hive</span></span></a>
-      <nav aria-label="Main navigation"><a href="/" aria-current={active === 'queue' ? 'page' : undefined}>The queue</a><a href="/submit" aria-current={active === 'submit' ? 'page' : undefined}>Submit a print <span aria-hidden="true">↗</span></a><a class="operator-link" href="/operator" aria-current={active === 'operator' ? 'page' : undefined}>Operators</a></nav>
+      <nav aria-label="Main navigation"><a href="/" aria-current={active === 'queue' ? 'page' : undefined}>Queue</a><a href="/submit" aria-current={active === 'submit' ? 'page' : undefined}>Submit a print</a><a class="operator-link" href="/operator" aria-current={active === 'operator' ? 'page' : undefined}>Operators</a></nav>
     </header>
     <main id="main"><slot /></main>
-    <footer><a class="footer-brand" href="/">PrintHive <span> / </span> Made for making.</a><span>One layer at a time.</span></footer>
   </body>
 </html>

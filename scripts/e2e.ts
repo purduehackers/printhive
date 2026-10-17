@@ -28,7 +28,7 @@ try {
   assert.equal((await queue()).length, 0);
   const token = new URL(url).searchParams.get('token')!;
   const confirm = await fetch(h.origin + '/confirm', { method: 'POST', headers: { Origin: h.origin }, body: new URLSearchParams({ token }) });
-  assert.equal(confirm.status, 200, await confirm.clone().text()); assert.match(await confirm.text(), /in the queue/);
+  assert.equal(confirm.status, 200, await confirm.clone().text()); assert.match(await confirm.text(), /Print queued/);
   const publicJob = (await queue())[0]; assert.equal(publicJob.id, one.id); assert.equal(publicJob.email, undefined); assert.equal(publicJob.notes, undefined);
   assert.equal((await fetch(`${h.origin}/api/jobs/${one.id}/file`)).status, 401);
   const login = await post('/api/login', { username: 'operator', password: 'test-password-12345' }); assert.equal(login.status, 200);

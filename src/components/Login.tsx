@@ -9,5 +9,5 @@ export default function Login() {
       location.assign('/operator');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not sign in.'); setBusy(false); }
   }
-  return <form onSubmit={submit} className="login-form"><label>Username<input name="username" autoComplete="username" required maxLength={64} /></label><label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={1024} /></label>{error && <p className="notice error" role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in →'}</button></form>;
+  return <form onSubmit={submit} className="login-form"><label>Username<input name="username" autoComplete="username" required maxLength={64} /></label><label>Password<input name="password" type="password" autoComplete="current-password" required maxLength={1024} /></label>{error && <p className="notice error" role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form>;
 }
