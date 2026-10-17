@@ -1,11 +1,11 @@
-FROM docker.io/oven/bun:1.3.12 AS build
+FROM docker.io/oven/bun:1.4.3 AS build
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run check && bun test tests && bun run build
 
-FROM docker.io/oven/bun:1.3.12 AS runtime
+FROM docker.io/oven/bun:1.4.3 AS runtime
 WORKDIR /app
 USER root
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4321 DATA_DIR=/data

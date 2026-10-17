@@ -16,7 +16,7 @@
     "cleanup": "bun scripts/cleanup.ts"
   },
   "engines": {
-    "bun": ">=1.3.12"
+    "bun": ">=1.4.3"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.8",

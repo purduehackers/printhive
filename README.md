@@ -4,9 +4,9 @@ An Astro + React 3D printing queue running on Bun. SQLite is accessed through `B
 
 ## Local development
 
-Requires Bun 1.3.12 or newer. All project commands use Bun.
+Requires Bun 1.4.3 or newer. All project commands use Bun; the container pins Bun 1.4.3.
 
-React and ReactDOM are pinned to 19.2.7 for production SSR compatibility with Bun 1.3.12. The test suite includes a production-rendering regression check; run it before upgrading that pair.
+React and ReactDOM are pinned to 19.2.7. The test suite includes a production-rendering regression check; run it before upgrading that pair.
 
 ```sh
 bun install --frozen-lockfile
@@ -65,6 +65,8 @@ podman run -d --name printhive --restart=always \
 ```
 
 Set `APP_ORIGIN` to the public HTTPS origin and use a new production confirmation secret. Set `SMTP_HOST`, `SMTP_PORT=465`, `SMTP_SECURE=true`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM` to your Cloudflare SMTPS configuration and verified sender. TLS certificate verification is enabled; unencrypted SMTP is rejected in production. Credentials and secrets are runtime environment variables, never build inputs. The app runs as root inside the container. With rootless Podman, container root maps to the invoking host user. A bind mount must be writable under that mapping; named volumes work with the supplied configuration.
+
+Use the required Bun version for SMTP delivery. Bun 1.3.12 can lose Cloudflare's SMTP greeting and report `Greeting never received` even when OpenSSL works. Bun 1.4.3 was verified with the standard Nodemailer transport and TLS certificate verification enabled.
 
 Production runs one web process with one local filesystem volume at `/data`. SQLite WAL does not make shared/network filesystems or multiple replicas safe. `bun run start` validates runtime configuration and applies migrations before launching the standalone server. `/api/health` checks database/schema access. The container retains `src/lib`, migrations, and operational CLIs for provisioning and cleanup:
 
