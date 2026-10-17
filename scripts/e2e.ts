@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { startHarness } from '../tests/harness';
 import { binarySTL, submission } from '../tests/fixtures';
+import { operatorsFlow } from '../tests/operators-flow';
 
 const h = await startHarness();
 const headers = { Origin: h.origin, 'Content-Type': 'application/json' };
@@ -69,5 +70,6 @@ try {
     assert.equal(Bun.file(join(h.dir, 'files', large.id + '.stl')).size, 84 + count * 50);
     console.log('Near-500-MiB streamed upload passed.');
   }
+  await operatorsFlow(h.origin, cookie);
   console.log('Production HTTP/SMTP flow passed: streaming, explicit confirmation, privacy, auth, original download, delivery failures, stale writes, and restart persistence.');
 } finally { await h.close(); }

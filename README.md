@@ -23,13 +23,15 @@ bun run dev
 
 Open `http://localhost:4321`; email appears in Mailpit at `http://localhost:8025`. Use the exact `APP_ORIGIN` hostname when browsing (including port). Submissions require a `@purdue.edu` address even in development; local Mailpit captures that mail without delivering externally.
 
-Provision an operator by piping a password from a password manager or protected file into the CLI:
+Provision the first operator by piping a password from a password manager or protected file into the CLI:
 
 ```sh
 bun run operator:add your-username < /path/to/protected-password-file
 ```
 
-Passwords must have 12–1024 characters and are hashed with Argon2id. Running the command again resets that account's password, activates it, and revokes its sessions. The CLI reads stdin, so passwords need not appear in process arguments or shell history. Operators can be disabled with `UPDATE operators SET active = 0 WHERE username = ?` in SQLite; inactive accounts immediately lose access.
+Passwords must have 12–1024 characters and are hashed with Argon2id. Running the command again resets that account's password, activates it, and revokes its sessions. The CLI reads stdin, so passwords need not appear in process arguments or shell history.
+
+Signed-in operators can use **Manage operators** on `/operator` to open `/operator/manage-operators`. All operators can add accounts, change usernames, reset passwords, and remove access. Leave the password blank when editing to retain it. Password resets and removals revoke the affected account's sessions; changing your own password or removing your own access signs you out. The last active operator cannot be removed through the UI or API. Removal deactivates the account and preserves its print history; adding the same username again restores that account with a new password. The CLI remains available for account recovery. No database migration is needed for operator management.
 
 ## How it works
 

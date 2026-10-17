@@ -6,6 +6,7 @@ import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
 import { invariant } from '../../lib/server/errors';
 import { reference } from '../../lib/shared';
+import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
@@ -35,6 +36,28 @@ export const ALL: APIRoute = async (context) => {
     }
     if (path === 'logout' && method === 'POST') {
       await logout(context); return context.redirect('/operator/login', 303);
+    }
+    if (path === 'operators' && ['GET', 'POST'].includes(method)) {
+      const actor = await requireOperator(context);
+      if (method === 'GET') return json(await listOperators());
+      rateLimit('operators:' + actor.id, 60, 900000);
+      return json({ operator: await addOperator(actor.id, await smallBody(request)) }, 201);
+    }
+    const operatorMatch = /^operators\/([1-9][0-9]*)$/.exec(path);
+    if (operatorMatch && ['PATCH', 'DELETE'].includes(method)) {
+      const actor = await requireOperator(context), id = Number(operatorMatch[1]);
+      invariant(Number.isSafeInteger(id), 400, 'Invalid operator ID.');
+      rateLimit('operators:' + actor.id, 60, 900000);
+      if (method === 'DELETE') {
+        await removeOperator(actor.id, id);
+        if (actor.id === id) await logout(context);
+        return json({ ok: true, signInRequired: actor.id === id });
+      }
+      const body = await smallBody(request);
+      const operator = await editOperator(actor.id, id, body);
+      const signInRequired = actor.id === id && typeof body.password === 'string' && body.password !== '';
+      if (signInRequired) await logout(context);
+      return json({ operator, signInRequired });
     }
     const downloadMatch = /^jobs\/([a-f0-9-]{36})\/file$/.exec(path);
     if (downloadMatch && method === 'GET') {

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, spyOn, mock } from 'bun:test';
 import { mkdtemp, rm, stat, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +15,7 @@ import { filePath, storeUpload } from '../src/lib/server/storage';
 import { checkOrigin, smallBody, rateLimit } from '../src/lib/server/http';
 import { login, logout, currentOperator, requireOperator } from '../src/lib/server/auth';
 import type { APIContext } from 'astro';
+import { addOperator, editOperator, listOperators, removeOperator } from '../src/lib/server/operators';
 
 let dir: string;
 const accepted: string[] = [];
@@ -188,5 +189,90 @@ describe('cleanup and request security', () => {
     await login(context, 'operator', password); await sql`UPDATE operators SET active = 0 WHERE id = 1`;
     expect(await currentOperator(context)).toBeNull(); await sql`UPDATE operators SET active = 1 WHERE id = 1`;
     await logout(context); expect(await currentOperator(context)).toBeNull(); expect(await sql`SELECT * FROM sessions`).toHaveLength(0);
+  });
+});
+
+describe('operator account management', () => {
+  beforeEach(async () => {
+    const sql = await db();
+    await sql`DELETE FROM operators WHERE id != 1`;
+    await sql`UPDATE operators SET username = 'operator', active = 1 WHERE id = 1`;
+  });
+  test('creates hashed credentials and exposes only account IDs and usernames', async () => {
+    const added = await addOperator(1, { username: 'new.operator', password: 'new-operator-password' });
+    expect(Object.keys(added).sort()).toEqual(['id', 'username']);
+    const [stored] = await (await db())`SELECT * FROM operators WHERE id = ${added.id}`;
+    expect(stored.password_hash).not.toBe('new-operator-password');
+    expect(await Bun.password.verify('new-operator-password', stored.password_hash)).toBe(true);
+    expect(await listOperators()).toHaveLength(2);
+    expect((await listOperators()).every(item => Object.keys(item).length === 2)).toBe(true);
+  });
+  test('rejects invalid input and duplicate usernames without changing the existing account', async () => {
+    for (const input of [null, [], { username: 'bad name', password: 'long-enough-password' }, { username: 'valid', password: 'short' }, { username: 'valid', password: null }]) {
+      await expect(addOperator(1, input)).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(addOperator(1, { username: 'operator', password: 'replacement-password' })).rejects.toMatchObject({ status: 409 });
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' });
+    await expect(editOperator(1, other.id, { username: 'operator' })).rejects.toMatchObject({ status: 409 });
+    await expect(editOperator(1, other.id, { username: 'other', password: 123 })).rejects.toMatchObject({ status: 400 });
+    await expect(editOperator(1, 999999, { username: 'missing' })).rejects.toMatchObject({ status: 404 });
+    expect(await listOperators()).toContainEqual(other);
+  });
+  test('renaming preserves the password and sessions; password reset revokes sessions', async () => {
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' }), sql = await db();
+    await sql`INSERT INTO sessions VALUES (${'c'.repeat(64)}, ${other.id}, ${Date.now() + 60000})`;
+    const renamed = await editOperator(1, other.id, { username: 'renamed', password: '' });
+    expect(renamed).toEqual({ id: other.id, username: 'renamed' });
+    expect(await sql`SELECT * FROM sessions WHERE operator_id = ${other.id}`).toHaveLength(1);
+    await editOperator(1, other.id, { username: 'renamed', password: 'replacement-password' });
+    expect(await sql`SELECT * FROM sessions WHERE operator_id = ${other.id}`).toHaveLength(0);
+    const [stored] = await sql`SELECT password_hash FROM operators WHERE id = ${other.id}`;
+    expect(await Bun.password.verify('replacement-password', stored.password_hash)).toBe(true);
+    expect(await Bun.password.verify('other-password-123', stored.password_hash)).toBe(false);
+  });
+  test('removal preserves print history and re-adding an account restores its identity', async () => {
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' }), sql = await db();
+    const job = await queued();
+    await updateStatus(job.id, 'printing', 1, other.id, mailer);
+    await sql`INSERT INTO sessions VALUES (${'d'.repeat(64)}, ${other.id}, ${Date.now() + 60000})`;
+    await removeOperator(1, other.id);
+    expect(await listOperators()).toHaveLength(1);
+    expect(await sql`SELECT * FROM sessions WHERE operator_id = ${other.id}`).toHaveLength(0);
+    expect(await sql`SELECT * FROM job_events WHERE operator_id = ${other.id}`).toHaveLength(1);
+    const restored = await addOperator(1, { username: 'other', password: 'restored-password' });
+    expect(restored.id).toBe(other.id);
+    expect(await sql`SELECT * FROM sessions WHERE operator_id = ${other.id}`).toHaveLength(0);
+  });
+  test('the last operator survives even when two operators remove each other concurrently', async () => {
+    await expect(removeOperator(1, 1)).rejects.toMatchObject({ status: 409 });
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' });
+    const outcomes = await Promise.allSettled([removeOperator(1, other.id), removeOperator(other.id, 1)]);
+    expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+    expect(await listOperators()).toHaveLength(1);
+  });
+  test('an operator removed during another request cannot change accounts', async () => {
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' });
+    await removeOperator(other.id, 1);
+    await expect(editOperator(1, other.id, { username: 'stolen' })).rejects.toMatchObject({ status: 401 });
+    await expect(removeOperator(1, other.id)).rejects.toMatchObject({ status: 401 });
+    await expect(addOperator(1, { username: 'revoked', password: 'revoked-password' })).rejects.toMatchObject({ status: 401 });
+  });
+  test('a password reset during login cannot create a session with the old credentials', async () => {
+    const other = await addOperator(1, { username: 'other', password: 'other-password-123' });
+    let started!: () => void, release!: (valid: boolean) => void;
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const gate = new Promise<boolean>(resolve => { release = resolve; });
+    const verify = spyOn(Bun.password, 'verify').mockImplementation(() => { started(); return gate; });
+    const setCookie = mock();
+    const context = { cookies: { set: setCookie } } as unknown as APIContext;
+    try {
+      const pending = login(context, 'other', 'other-password-123');
+      await entered;
+      await editOperator(1, other.id, { username: 'other', password: 'replacement-password' });
+      release(true);
+      await expect(pending).rejects.toMatchObject({ status: 401 });
+      expect(await (await db())`SELECT * FROM sessions WHERE operator_id = ${other.id}`).toHaveLength(0);
+      expect(setCookie).not.toHaveBeenCalled();
+    } finally { release(false); verify.mockRestore(); }
   });
 });

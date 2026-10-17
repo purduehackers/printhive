@@ -34,7 +34,13 @@ export async function login(context: APIContext, username: unknown, password: un
     invariant(valid && operator?.active === 1, 401, 'Incorrect username or password.');
     const token = randomBytes(32).toString('hex'), expires = Date.now() + config().sessionTTL;
     await sql`DELETE FROM sessions WHERE expires_at <= ${Date.now()}`;
-    await sql`INSERT INTO sessions VALUES (${digest(token)}, ${operator.id}, ${expires})`;
+    // A reset/removal during password verification must not create a fresh session
+    // using credentials that have just been revoked.
+    const [session] = await sql`INSERT INTO sessions (token_hash, operator_id, expires_at)
+      SELECT ${digest(token)}, id, ${expires} FROM operators
+      WHERE id = ${operator.id} AND active = 1 AND password_hash = ${operator.password_hash}
+      RETURNING token_hash`;
+    invariant(session, 401, 'Credentials changed. Please sign in again.');
     context.cookies.set(SESSION_COOKIE, token, { httpOnly: true, secure: config().production,
       sameSite: 'strict', path: '/', expires: new Date(expires) });
   } finally { verifying--; }
