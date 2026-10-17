@@ -1,23 +1,33 @@
 import nodemailer from 'nodemailer';
 import { config } from './config';
 import { reference, type Job } from '../shared';
+import { logError } from './log';
 
 export interface Message { to: string; subject: string; text: string }
-export type Mailer = (message: Message) => Promise<void>;
-export const sendMail: Mailer = async (message) => {
+export type Mailer = (message: Message, context?: { jobId: string; purpose: 'confirmation' | 'status' }) => Promise<void>;
+export const sendMail: Mailer = async (message, context) => {
   const secure = process.env.SMTP_SECURE !== 'false';
-  if (config().production && !secure) throw new Error('Production SMTP requires implicit TLS');
-  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) throw new Error('SMTP_HOST and SMTP_FROM are required');
-  const transport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST, port: Number(process.env.SMTP_PORT ?? (secure ? 465 : 1025)), secure,
-    auth: process.env.SMTP_USERNAME ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD } : undefined,
-    connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
-    tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
-  });
+  const port = Number(process.env.SMTP_PORT ?? (secure ? 465 : 1025));
+  const started = Date.now();
+  let transport: ReturnType<typeof nodemailer.createTransport> | undefined;
   try {
+    if (config().production && !secure) throw new Error('Production SMTP requires implicit TLS');
+    if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) throw new Error('SMTP_HOST and SMTP_FROM are required');
+    transport = nodemailer.createTransport({
+      host: process.env.SMTP_HOST, port, secure,
+      auth: process.env.SMTP_USERNAME ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD } : undefined,
+      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
+      tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
+    });
     const result = await transport.sendMail({ from: process.env.SMTP_FROM, ...message, disableFileAccess: true, disableUrlAccess: true });
-    if (!result.accepted?.length || result.rejected?.length) throw new Error('SMTP did not accept recipient');
-  } finally { transport.close(); }
+    if (!result.accepted?.length || result.rejected?.length) throw Object.assign(new Error('SMTP did not accept recipient'), {
+      code: 'EENVELOPE', response: result.response,
+    });
+  } catch (error) {
+    logError('email.send_failed', error, { ...context, smtpHost: process.env.SMTP_HOST, smtpPort: port,
+      secure, authConfigured: Boolean(process.env.SMTP_USERNAME), durationMs: Date.now() - started });
+    throw error;
+  } finally { transport?.close(); }
 };
 export function confirmationMessage(job: Job, token: string): Message {
   return { to: job.email, subject: `Confirm your PrintHive job · ${reference(job.id)}`,

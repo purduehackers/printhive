@@ -1,4 +1,6 @@
 import { db, migrate } from '../src/lib/server/db';
+import { runCommand } from '../src/lib/server/log';
+await runCommand('operator.provision', async () => {
 const username = process.argv[2];
 if (!username || !/^[a-zA-Z0-9_.-]{1,64}$/.test(username)) throw new Error('Usage: bun run operator:add <username> (password via stdin)');
 if (process.stdin.isTTY) console.log('Enter a password through stdin. Prefer a password manager pipe; terminal input is not masked.');
@@ -14,3 +16,4 @@ await sql.begin(async tx => {
 });
 await sql.close();
 console.log(`Operator ${username} provisioned; previous sessions revoked.`);
+});

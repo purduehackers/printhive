@@ -46,6 +46,16 @@ try {
   assert.equal(h.messages.length, 2); assert.match(h.messages[1], /completed/);
   const stale = await post(`/api/jobs/${one.id}/status`, { status: 'queued', version: 2 }, cookie); assert.equal(stale.status, 409);
   await h.restart();
+  const records = h.logs().split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  const smtpFailure = records.find(record => record.event === 'email.send_failed' && record.jobId === failed.id);
+  assert.equal(smtpFailure?.error.responseCode, 550);
+  assert.match(smtpFailure.error.response, /Test delivery rejection/);
+  assert.equal(smtpFailure.purpose, 'confirmation');
+  assert.equal(smtpFailure.smtpPort > 0, true);
+  assert.equal(records.some(record => record.event === 'job.notification_failed' && record.jobId === one.id && record.jobStatus === 'printing'), true);
+  assert.equal(records.some(record => record.event === 'submission.failed' && record.jobId === failed.id && record.error.cause.responseCode === 550), true);
+  assert.equal(records.some(record => record.event === 'http.request_failed' && record.status === 403), true);
+  for (const privateValue of [token, 'test@purdue.edu', 'Private notes', 'test-password-12345', cookie.split('=')[1]]) assert.equal(h.logs().includes(privateValue), false);
   assert.equal((await fetch(`${h.origin}/api/jobs/${one.id}/file`, { headers: { Cookie: cookie } })).status, 200);
   assert.equal((await fetch(`${h.origin}/operator/jobs/${one.id}`, { headers: { Cookie: cookie } })).status, 200);
   assert.equal((await queue()).length, 0);

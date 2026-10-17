@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { db } from './db';
 import { config } from './config';
 import { removeFile } from './storage';
+import { logWarning } from './log';
 
 export async function cleanup(now = Date.now()) {
   const sql = await db();
@@ -17,7 +18,10 @@ export async function cleanup(now = Date.now()) {
   for (const name of await readdir(dir).catch((e) => { if (e.code === 'ENOENT') return []; throw e; })) {
     if (!/^[a-f0-9-]{36}\.stl(?:\.part)?$/.test(name)) continue;
     const path = join(dir, name), key = name.replace(/\.part$/, '');
-    const info = await stat(path).catch(() => null);
+    const info = await stat(path).catch(error => {
+      if (error.code !== 'ENOENT') logWarning('cleanup.stat_failed', error, { storageKey: key });
+      return null;
+    });
     if (!info || info.mtimeMs > now - 2 * 3600000) continue;
     if ((await sql`SELECT id FROM jobs WHERE storage_key = ${key}`).length) continue;
     await unlink(path).catch((e) => { if (e.code !== 'ENOENT') throw e; });

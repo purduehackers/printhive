@@ -44,11 +44,22 @@ export async function startHarness() {
   await run(['scripts/migrate.ts']); await run(['scripts/operator.ts', 'operator'], 'test-password-12345');
   let child: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | undefined;
   let output = '';
+  let drains: Promise<void>[] = [];
+  async function collect(stream: ReadableStream<Uint8Array>) {
+    const reader = stream.getReader(), decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        output += decoder.decode(value, { stream: true });
+      }
+      output += decoder.decode();
+    } finally { reader.releaseLock(); }
+  }
   async function start() {
     child = Bun.spawn([process.execPath, 'dist/server/entry.mjs'], { env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
     const current = child;
-    void new Response(current.stdout).text().then(text => output += text);
-    void new Response(current.stderr).text().then(text => output += text);
+    drains = [collect(current.stdout), collect(current.stderr)];
     for (let i = 0; i < 120; i++) {
       try { if ((await fetch(origin + '/api/health')).ok) return; } catch { /* Starting. */ }
       if (current.exitCode !== null) throw new Error('Server exited: ' + output);
@@ -56,8 +67,8 @@ export async function startHarness() {
     }
     throw new Error('Server did not become healthy: ' + output);
   }
-  async function stop() { if (child) { child.kill(); await child.exited; child = undefined; } }
+  async function stop() { if (child) { child.kill(); await child.exited; await Promise.all(drains); child = undefined; } }
   async function close() { await stop(); for (const socket of sockets) socket.destroy(); await new Promise<void>(resolve => smtp.close(() => resolve())); await rm(dir, { recursive: true, force: true }); }
   try { await start(); } catch (e) { await close(); throw e; }
-  return { origin, dir, messages, rejectMail: (reject: boolean) => { rejectMail = reject; }, restart: async () => { await stop(); await start(); }, close };
+  return { origin, dir, messages, logs: () => output, rejectMail: (reject: boolean) => { rejectMail = reject; }, restart: async () => { await stop(); await start(); }, close };
 }

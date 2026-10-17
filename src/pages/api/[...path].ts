@@ -55,5 +55,5 @@ export const ALL: APIRoute = async (context) => {
       return json(await updateStatus(statusMatch[1], body.status, body.version, operator.id));
     }
     return json({ error: 'Endpoint not found.' }, 404);
-  } catch (error) { return errorResponse(error); }
+  } catch (error) { return errorResponse(error, request); }
 };

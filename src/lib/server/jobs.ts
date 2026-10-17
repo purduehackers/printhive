@@ -7,6 +7,7 @@ import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
 import { sendMail, confirmationMessage, statusMessage, type Mailer } from './mail';
 import { transitions, type Job, type PublicJob, type Status } from '../shared';
+import { logError, logFailure } from './log';
 
 export async function reserve(input: unknown) {
   const data = metadata(input), sql = await db(), now = Date.now();
@@ -42,16 +43,22 @@ export async function upload(id: string, token: string, request: Request, mailer
     const [updated] = await sql`UPDATE jobs SET upload_state = 'uploaded', pending_expires_at = ${expiry}
       WHERE id = ${id} AND upload_state = 'uploading' AND upload_expires_at > ${Date.now()} RETURNING *`;
     invariant(updated, 410, 'The upload expired. Please try again.');
-    try { await mailer(confirmationMessage(updated, seal(id, 'confirm', expiry))); }
-    catch { throw new HttpError(502, 'We could not send the confirmation email. Your submission was removed; please try again later.'); }
+    try { await mailer(confirmationMessage(updated, seal(id, 'confirm', expiry)), { jobId: id, purpose: 'confirmation' }); }
+    catch (cause) { throw new HttpError(502, 'We could not send the confirmation email. Your submission was removed; please try again later.', { cause }); }
     const ready = await sql`UPDATE jobs SET upload_state = 'ready'
       WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
     invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
     return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
   } catch (e) {
+    logFailure('submission.failed', e, { jobId: id });
     if (claimed) {
-      await sql`DELETE FROM jobs WHERE id = ${id} AND status = 'pending_confirmation'`;
-      await removeFile(claimed.storage_key);
+      try {
+        await sql`DELETE FROM jobs WHERE id = ${id} AND status = 'pending_confirmation'`;
+        await removeFile(claimed.storage_key);
+      } catch (cleanupError) {
+        logError('submission.cleanup_failed', cleanupError, { jobId: id });
+        throw new HttpError(500, 'The submission failed and cleanup could not finish. Please contact the operator.', { cause: e });
+      }
     }
     throw e;
   } finally { activeUploads--; }
@@ -100,8 +107,11 @@ export async function updateStatus(id: string, next: Status, version: number, op
   });
   let warning: string | undefined;
   if (result.changed) {
-    try { await mailer(statusMessage(result.job)); }
-    catch { warning = 'Status saved, but the notification email failed. Contact the submitter directly; email will not be retried automatically.'; }
+    try { await mailer(statusMessage(result.job), { jobId: id, purpose: 'status' }); }
+    catch (error) {
+      logError('job.notification_failed', error, { jobId: id, operatorId: operator, jobStatus: result.job.status, version: result.job.version });
+      warning = 'Status saved, but the notification email failed. Contact the submitter directly; email will not be retried automatically.';
+    }
   }
   return { ...result, warning };
 }
