@@ -1,0 +1,7 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Login from '../../components/Login';
+import { currentOperator } from '../../lib/server/auth';
+if (await currentOperator(Astro)) return Astro.redirect('/operator');
+---
+<Layout title="Operator sign in" active="operator"><section class="login-panel"><p class="eyebrow">Behind the print bed</p><h1>Hello, operator.</h1><p class="muted">Sign in to manage prints and keep things moving.</p><Login client:load /><noscript>Enable JavaScript to sign in.</noscript><p class="small muted">Accounts are provisioned by the PrintHive administrator.</p></section></Layout>

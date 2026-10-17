@@ -1,0 +1,21 @@
+# Rootless Quadlet: ~/.config/containers/systemd/printhive.container
+[Unit]
+Description=PrintHive 3D printing queue
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/printhive:latest
+ContainerName=printhive
+PublishPort=127.0.0.1:4321:4321
+Volume=printhive-data:/data
+EnvironmentFile=%h/.config/printhive/production.env
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+# ~/.config/systemd/user/printhive-cleanup.timer
+[Unit]
+Description=Clean expired PrintHive submissions every 15 minutes
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

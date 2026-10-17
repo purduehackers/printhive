@@ -1,0 +1,8 @@
+# ~/.config/systemd/user/printhive-cleanup.service
+[Unit]
+Description=Remove expired PrintHive submissions
+After=printhive.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman exec printhive bun run cleanup
