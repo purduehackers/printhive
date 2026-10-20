@@ -1,8 +1,12 @@
-import { parseSTL } from '../lib/stl';
-const worker = self as unknown as { onmessage: (event: MessageEvent<File>) => void; postMessage: (value: unknown, transfer?: Transferable[]) => void };
+import { parseSTL } from "../lib/stl";
+const worker = self as unknown as {
+  onmessage: (event: MessageEvent<File>) => void;
+  postMessage: (value: unknown, transfer?: Transferable[]) => void;
+};
 worker.onmessage = async ({ data: file }) => {
   try {
-    const limit = 100000, positions = new Float32Array(limit * 9);
+    const limit = 1000000,
+      positions = new Float32Array(limit * 9);
     const info = await parseSTL(file, (vertices, index) => {
       // Deterministic reservoir sample keeps memory and GPU cost bounded for large STLs.
       let slot = index;
@@ -14,6 +18,14 @@ worker.onmessage = async ({ data: file }) => {
       if (slot < limit) positions.set(vertices, slot * 9);
     });
     const result = positions.slice(0, Math.min(info.triangles, limit) * 9);
-    worker.postMessage({ positions: result, ...info, simplified: info.triangles > limit }, [result.buffer]);
-  } catch (error) { worker.postMessage({ error: error instanceof Error ? error.message : 'Could not read this STL.' }); }
+    worker.postMessage(
+      { positions: result, ...info, simplified: info.triangles > limit },
+      [result.buffer],
+    );
+  } catch (error) {
+    worker.postMessage({
+      error:
+        error instanceof Error ? error.message : "Could not read this STL.",
+    });
+  }
 };

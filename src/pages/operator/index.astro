@@ -7,7 +7,7 @@ const operator = await currentOperator(Astro);
 if (!operator) return Astro.redirect('/operator/login');
 const sql = await db();
 const filter = STATUSES.find(s => s === Astro.url.searchParams.get('status')) ?? 'all';
-const page = Math.min(100000, Math.max(1, Number.parseInt(Astro.url.searchParams.get('page') ?? '1') || 1));
+const page = Math.min(1000000, Math.max(1, Number.parseInt(Astro.url.searchParams.get('page') ?? '1') || 1));
 const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL AND (${filter} = 'all' OR status = ${filter})
   ORDER BY CASE status WHEN 'printing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
   CASE WHEN status IN ('queued','printing') THEN queued_at ELSE -created_at END, id LIMIT 51 OFFSET ${(page - 1) * 50}`;
