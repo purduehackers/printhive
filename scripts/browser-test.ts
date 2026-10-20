@@ -41,6 +41,30 @@ try {
   await page.getByRole('button', { name: 'Update status' }).click();
   await expect(page.getByText(/Status saved, but the notification email failed/)).toBeVisible();
   await expect(page.getByText('Current status:')).toContainText('completed');
+  h.rejectMail(false);
+  await page.getByRole('button', { name: 'Update status' }).click();
+  await expect(page.getByText('Current status:')).toContainText('queued');
+  await page.getByLabel('New status').selectOption('rejected');
+  const returnButton = page.getByRole('button', { name: 'Reject and return', exact: true });
+  await expect(returnButton).toBeDisabled();
+  await page.getByLabel('Feedback for submitter').fill('  \n  ');
+  await expect(returnButton).toBeDisabled();
+  const feedback = 'Please thicken the walls.\nKeep <script> as plain text.';
+  await page.getByLabel('Feedback for submitter').fill(feedback);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/return-feedback-mobile.png', fullPage: true });
+  await returnButton.click();
+  await expect(page.getByText('Current status:')).toContainText('rejected');
+  await expect(page.getByText('Status saved and notification email accepted for delivery.')).toBeVisible();
+  await page.getByRole('link', { name: 'Refresh details' }).click();
+  await expect(page.locator('.history .operator-notes')).toHaveText(feedback);
+  await page.screenshot({ path: 'test-results/returned-job-mobile.png', fullPage: true });
+  await page.goto(h.origin);
+  await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toHaveCount(0);
+  await page.goto(h.origin + '/operator?status=rejected');
+  await expect(page.getByRole('link', { name: 'Browser test bracket', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(h.origin + '/operator');
   await page.getByRole('link', { name: 'Manage operators', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Manage operators', exact: true })).toBeVisible();
@@ -74,5 +98,5 @@ try {
   }
   await page.goto(h.origin + '/submit'); await page.screenshot({ path: 'test-results/submit-mobile.png', fullPage: true });
   expect(errors).toEqual([]);
-  console.log('Browser flow passed: worker/WebGL preview, submit/confirm, operator updates, email warning, and mobile layout.');
+  console.log('Browser flow passed: worker/WebGL preview, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.');
 } finally { await browser?.close(); await h.close(); }

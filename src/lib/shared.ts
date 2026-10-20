@@ -3,12 +3,13 @@ export const INFILLS = [15, 20, 30, 50] as const;
 export const COLORS = ['black', 'white', 'yellow', 'red'] as const;
 export const LAYERS = [0.12, 0.16, 0.2, 0.28] as const;
 export const SUPPORTS = ['operator', 'none', 'tree'] as const;
-export const STATUSES = ['queued', 'printing', 'completed', 'canceled', 'failed'] as const;
+export const MAX_FEEDBACK_LENGTH = 5000;
+export const STATUSES = ['queued', 'printing', 'completed', 'canceled', 'failed', 'rejected'] as const;
 export type Status = typeof STATUSES[number];
 export const transitions: Record<Status, Status[]> = {
-  queued: ['printing', 'canceled', 'failed'],
-  printing: ['completed', 'canceled', 'failed'],
-  completed: ['queued'], canceled: ['queued'], failed: ['queued'],
+  queued: ['printing', 'canceled', 'failed', 'rejected'],
+  printing: ['completed', 'canceled', 'failed', 'rejected'],
+  completed: ['queued'], canceled: ['queued'], failed: ['queued'], rejected: ['queued'],
 };
 export interface PrintSettings {
   infill: number; color: string; layer_height: number; supports: string; copies: number; mirror: number;

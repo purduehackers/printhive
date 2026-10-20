@@ -33,7 +33,11 @@ export function confirmationMessage(job: Job, token: string): Message {
   return { to: job.email, subject: `Confirm your PrintHive job · ${reference(job.id)}`,
     text: `Your print: ${job.title}\nReference: ${reference(job.id)}\n\nOpen this link, then press Confirm print to join the queue:\n${config().origin}/confirm?token=${encodeURIComponent(token)}\n\nThis link expires in 24 hours. Your job is not queued until you confirm it.\n\nIf you did not request this print, ignore this email.` };
 }
-export function statusMessage(job: Job): Message {
+export function statusMessage(job: Job, feedback = ''): Message {
+  if (job.status === 'rejected') return {
+    to: job.email, subject: `PrintHive · ${job.title} was returned with feedback`,
+    text: `Your print “${job.title}” (${reference(job.id)}) was rejected and returned for changes. It is no longer in the active queue.\n\nOperator feedback:\n${feedback}\n\nPlease address the feedback and submit a revised print:\n${config().origin}/submit\n\nPrintHive`,
+  };
   return { to: job.email, subject: `PrintHive · ${job.title} is ${job.status}`,
     text: `Your print “${job.title}” (${reference(job.id)}) is now ${job.status}.\n\nView the queue: ${config().origin}/\n\nPrintHive` };
 }

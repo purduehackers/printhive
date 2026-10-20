@@ -46,6 +46,20 @@ try {
   const complete = await post(`/api/jobs/${one.id}/status`, { status: 'completed', version: 2 }, cookie); assert.equal(complete.status, 200);
   assert.equal(h.messages.length, 2); assert.match(h.messages[1], /completed/);
   const stale = await post(`/api/jobs/${one.id}/status`, { status: 'queued', version: 2 }, cookie); assert.equal(stale.status, 409);
+  const statusPath = `/api/jobs/${one.id}/status`, feedback = 'Please thicken the walls.\nSubmit a revised STL.';
+  assert.equal((await post(statusPath, { status: 'rejected', version: 3, feedback })).status, 401);
+  assert.equal((await fetch(h.origin + statusPath, { method: 'POST', headers: { ...headers, Origin: 'https://evil.test', Cookie: cookie }, body: JSON.stringify({ status: 'rejected', version: 3, feedback }) })).status, 403);
+  // Completed jobs must be requeued before an operator can return them.
+  assert.equal((await post(statusPath, { status: 'rejected', version: 3, feedback }, cookie)).status, 400);
+  assert.equal((await post(statusPath, { status: 'queued', version: 3 }, cookie)).status, 200);
+  for (const invalid of [undefined, '', ' \n ', null, 123, 'x'.repeat(5001)]) {
+    assert.equal((await post(statusPath, { status: 'rejected', version: 4, feedback: invalid }, cookie)).status, 400);
+  }
+  const returned = await post(statusPath, { status: 'rejected', version: 4, feedback }, cookie);
+  assert.equal(returned.status, 200); assert.equal((await returned.json()).job.status, 'rejected');
+  assert.match(h.messages.at(-1)!, /was rejected and returned for changes/); assert.equal(h.messages.at(-1)!.includes(feedback.replaceAll('\n', '\r\n')), true);
+  assert.equal(h.messages.at(-1)!.includes(h.origin + '/submit'), true);
+  assert.equal((await queue()).length, 0);
   await h.restart();
   const records = h.logs().split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
   const smtpFailure = records.find(record => record.event === 'email.send_failed' && record.jobId === failed.id);
@@ -56,9 +70,12 @@ try {
   assert.equal(records.some(record => record.event === 'job.notification_failed' && record.jobId === one.id && record.jobStatus === 'printing'), true);
   assert.equal(records.some(record => record.event === 'submission.failed' && record.jobId === failed.id && record.error.cause.responseCode === 550), true);
   assert.equal(records.some(record => record.event === 'http.request_failed' && record.status === 403), true);
-  for (const privateValue of [token, 'test@purdue.edu', 'Private notes', 'test-password-12345', cookie.split('=')[1]]) assert.equal(h.logs().includes(privateValue), false);
+  for (const privateValue of [token, 'test@purdue.edu', 'Private notes', feedback, 'test-password-12345', cookie.split('=')[1]]) assert.equal(h.logs().includes(privateValue), false);
   assert.equal((await fetch(`${h.origin}/api/jobs/${one.id}/file`, { headers: { Cookie: cookie } })).status, 200);
-  assert.equal((await fetch(`${h.origin}/operator/jobs/${one.id}`, { headers: { Cookie: cookie } })).status, 200);
+  const details = await fetch(`${h.origin}/operator/jobs/${one.id}`, { headers: { Cookie: cookie } });
+  assert.equal(details.status, 200); assert.equal((await details.text()).includes(feedback), true);
+  const rejectedJobs = await fetch(h.origin + '/operator?status=rejected', { headers: { Cookie: cookie } });
+  assert.equal((await rejectedJobs.text()).includes('Production stream test'), true);
   assert.equal((await queue()).length, 0);
   if (process.env.LARGE_UPLOAD_TEST === '1') {
     const count = Math.floor((500 * 1024 ** 2 - 84) / 50), path = join(h.dir, 'large-fixture.stl');

@@ -75,7 +75,7 @@ export const ALL: APIRoute = async (context) => {
     if (statusMatch && method === 'POST') {
       const operator = await requireOperator(context), body = await smallBody(request);
       invariant(body && typeof body === 'object', 400, 'Invalid status update.');
-      return json(await updateStatus(statusMatch[1], body.status, body.version, operator.id));
+      return json(await updateStatus(statusMatch[1], body.status, body.version, operator.id, { feedback: body.feedback }));
     }
     return json({ error: 'Endpoint not found.' }, 404);
   } catch (error) { return errorResponse(error, request); }

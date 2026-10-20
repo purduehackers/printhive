@@ -6,7 +6,7 @@ import { seal, unseal } from './tokens';
 import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
 import { sendMail, confirmationMessage, statusMessage, type Mailer } from './mail';
-import { transitions, type Job, type PublicJob, type Status } from '../shared';
+import { MAX_FEEDBACK_LENGTH, transitions, type Job, type PublicJob, type Status } from '../shared';
 import { logError, logFailure } from './log';
 
 export async function reserve(input: unknown) {
@@ -88,8 +88,14 @@ export async function publicQueue(): Promise<PublicJob[]> {
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
 }
-export async function updateStatus(id: string, next: Status, version: number, operator: number, mailer: Mailer = sendMail) {
+export async function updateStatus(id: string, next: Status, version: number, operator: number,
+  { feedback: input = '', mailer = sendMail }: { feedback?: unknown; mailer?: Mailer } = {}) {
   invariant(Object.hasOwn(transitions, next) && Number.isSafeInteger(version), 400, 'Invalid status update.');
+  invariant(typeof input === 'string' && input.length <= MAX_FEEDBACK_LENGTH && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(input),
+    400, `Feedback must be text with at most ${MAX_FEEDBACK_LENGTH} characters.`);
+  const feedback = input.trim();
+  invariant(next !== 'rejected' || feedback.length > 0, 400, 'Provide feedback before rejecting and returning this print.');
+  invariant(next === 'rejected' || feedback.length === 0, 400, 'Feedback is only supported when rejecting and returning a print.');
   const sql = await db();
   const result = await sql.begin(async tx => {
     // A conditional UPDATE is the first statement, acquiring SQLite's write lock before reading.
@@ -101,13 +107,13 @@ export async function updateStatus(id: string, next: Status, version: number, op
     const now = Date.now();
     const [updated]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
       queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${id} RETURNING *`;
-    await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at)
-      VALUES (${id}, ${job.status}, ${next}, ${operator}, ${now})`;
+    await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
+      VALUES (${id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback})`;
     return { job: updated, changed: true };
   });
   let warning: string | undefined;
   if (result.changed) {
-    try { await mailer(statusMessage(result.job), { jobId: id, purpose: 'status' }); }
+    try { await mailer(statusMessage(result.job, feedback), { jobId: id, purpose: 'status' }); }
     catch (error) {
       logError('job.notification_failed', error, { jobId: id, operatorId: operator, jobStatus: result.job.status, version: result.job.version });
       warning = 'Status saved, but the notification email failed. Contact the submitter directly; email will not be retried automatically.';

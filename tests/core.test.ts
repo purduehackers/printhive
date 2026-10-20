@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { asciiSTL, binarySTL, submission } from './fixtures';
 import { metadata } from '../src/lib/server/validation';
-import { MAX_FILE_BYTES } from '../src/lib/shared';
+import { MAX_FEEDBACK_LENGTH, MAX_FILE_BYTES } from '../src/lib/shared';
 import { parseSTL } from '../src/lib/stl';
 import { seal, unseal } from '../src/lib/server/tokens';
 import { db, migrate } from '../src/lib/server/db';
@@ -130,28 +130,81 @@ describe('upload and delivery failure semantics', () => {
   });
 });
 describe('operator transitions', () => {
+  test('queued and printing jobs can be returned with private feedback and a status email', async () => {
+    for (const status of ['queued', 'printing']) {
+      const r = await queued();
+      if (status === 'printing') await updateStatus(r.id, 'printing', 1, 1, { mailer });
+      const feedback = 'Please thicken the walls.\nThen submit a revised STL.';
+      accepted.length = 0;
+      const version = status === 'printing' ? 2 : 1;
+      const result = await updateStatus(r.id, 'rejected', version, 1, { feedback: `  ${feedback}  `, mailer });
+      expect(result.job.status).toBe('rejected'); expect(result.job.version).toBe(version + 1);
+      expect(result.warning).toBeUndefined(); expect(result.changed).toBe(true);
+      expect((await publicQueue()).some(job => job.id === r.id)).toBe(false);
+      const [event] = await (await db())`SELECT * FROM job_events WHERE job_id = ${r.id} ORDER BY id DESC`;
+      expect(event).toMatchObject({ previous_status: status, next_status: 'rejected', operator_id: 1, feedback });
+      expect(accepted).toHaveLength(1); expect(accepted[0]).toContain(feedback);
+      expect(accepted[0]).toContain('http://localhost:4321/submit');
+      expect(await Bun.file(filePath(r.id + '.stl')).exists()).toBe(true);
+      // A repeated request cannot send again, replace feedback, or reopen through confirmation.
+      await expect(updateStatus(r.id, 'rejected', version, 1, { feedback, mailer })).rejects.toMatchObject({ status: 409 });
+      expect((await updateStatus(r.id, 'rejected', version + 1, 1, { feedback, mailer })).changed).toBe(false);
+      await confirmation(r.token, true);
+      expect(accepted).toHaveLength(1); expect(await publicQueue()).toHaveLength(0);
+      const requeued = await updateStatus(r.id, 'queued', version + 1, 1, { mailer });
+      expect(requeued.job.status).toBe('queued'); expect(accepted.at(-1)).not.toContain(feedback);
+      const [history] = await (await db())`SELECT feedback FROM job_events WHERE id = ${event.id}`;
+      expect(history.feedback).toBe(feedback);
+      await updateStatus(r.id, 'canceled', version + 2, 1, { mailer });
+    }
+  });
+  test('invalid return feedback leaves the job, history and emails unchanged', async () => {
+    const r = await queued(); accepted.length = 0;
+    for (const feedback of [undefined, null, '', ' \n\t ', 123, {}, 'x'.repeat(MAX_FEEDBACK_LENGTH + 1), 'bad\u0000text']) {
+      await expect(updateStatus(r.id, 'rejected', 1, 1, { feedback, mailer })).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(updateStatus(r.id, 'printing', 1, 1, { feedback: 'Unsent feedback', mailer })).rejects.toMatchObject({ status: 400 });
+    expect((await publicQueue())[0].version).toBe(1);
+    expect(await (await db())`SELECT * FROM job_events`).toHaveLength(0); expect(accepted).toHaveLength(0);
+  });
+  test('a return email failure preserves feedback and reports the delivery warning', async () => {
+    const r = await queued(), feedback = 'x'.repeat(MAX_FEEDBACK_LENGTH);
+    const result = await updateStatus(r.id, 'rejected', 1, 1, { feedback, mailer: rejected });
+    expect(result.warning).toContain('Status saved'); expect(result.job.status).toBe('rejected');
+    const [event] = await (await db())`SELECT * FROM job_events WHERE job_id = ${r.id}`;
+    expect(event.feedback).toBe(feedback); expect(await publicQueue()).toHaveLength(0);
+  });
+  test('racing return and print updates save only one event and send one email', async () => {
+    const r = await queued(); accepted.length = 0;
+    const results = await Promise.allSettled([
+      updateStatus(r.id, 'rejected', 1, 1, { feedback: 'Please repair the mesh.', mailer }),
+      updateStatus(r.id, 'printing', 1, 1, { mailer }),
+    ]);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await (await db())`SELECT * FROM job_events`).toHaveLength(1); expect(accepted).toHaveLength(1);
+  });
   test('multiple prints can print simultaneously, failures preserve actual status', async () => {
     const one = await queued(), two = await queued();
-    const result = await updateStatus(one.id, 'printing', 1, 1, rejected);
+    const result = await updateStatus(one.id, 'printing', 1, 1, { mailer: rejected });
     expect(result.warning).toContain('Status saved');
-    await updateStatus(two.id, 'printing', 1, 1, mailer);
+    await updateStatus(two.id, 'printing', 1, 1, { mailer });
     expect((await publicQueue()).filter(j => j.status === 'printing')).toHaveLength(2);
     expect(await (await db())`SELECT * FROM job_events`).toHaveLength(2);
   });
   test('invalid transitions and stale versions are rejected', async () => {
     const r = await queued();
-    await expect(updateStatus(r.id, 'completed', 1, 1, mailer)).rejects.toThrow('not allowed');
-    const results = await Promise.allSettled([updateStatus(r.id, 'printing', 1, 1, mailer), updateStatus(r.id, 'canceled', 1, 1, mailer)]);
+    await expect(updateStatus(r.id, 'completed', 1, 1, { mailer })).rejects.toThrow('not allowed');
+    const results = await Promise.allSettled([updateStatus(r.id, 'printing', 1, 1, { mailer }), updateStatus(r.id, 'canceled', 1, 1, { mailer })]);
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
     expect(await (await db())`SELECT * FROM job_events`).toHaveLength(1);
   });
   test('no-op does not email; requeue goes to the end and link cannot reset state', async () => {
     const r = await queued(); accepted.length = 0;
-    expect((await updateStatus(r.id, 'queued', 1, 1, mailer)).changed).toBe(false); expect(accepted).toHaveLength(0);
-    await updateStatus(r.id, 'canceled', 1, 1, mailer); const two = await queued();
-    await Bun.sleep(2); await updateStatus(r.id, 'queued', 2, 1, mailer);
+    expect((await updateStatus(r.id, 'queued', 1, 1, { mailer })).changed).toBe(false); expect(accepted).toHaveLength(0);
+    await updateStatus(r.id, 'canceled', 1, 1, { mailer }); const two = await queued();
+    await Bun.sleep(2); await updateStatus(r.id, 'queued', 2, 1, { mailer });
     expect((await publicQueue()).map(j => j.id)).toEqual([two.id, r.id]);
-    await updateStatus(r.id, 'printing', 3, 1, mailer); await confirmation(r.token, true);
+    await updateStatus(r.id, 'printing', 3, 1, { mailer }); await confirmation(r.token, true);
     expect((await publicQueue()).find(j => j.id === r.id)?.status).toBe('printing');
   });
 });
@@ -233,7 +286,7 @@ describe('operator account management', () => {
   test('removal preserves print history and re-adding an account restores its identity', async () => {
     const other = await addOperator(1, { username: 'other', password: 'other-password-123' }), sql = await db();
     const job = await queued();
-    await updateStatus(job.id, 'printing', 1, other.id, mailer);
+    await updateStatus(job.id, 'printing', 1, other.id, { mailer });
     await sql`INSERT INTO sessions VALUES (${'d'.repeat(64)}, ${other.id}, ${Date.now() + 60000})`;
     await removeOperator(1, other.id);
     expect(await listOperators()).toHaveLength(1);
