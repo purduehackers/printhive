@@ -1,0 +1,7 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Login from '../../components/Login';
+import { currentOperator } from '../../lib/server/auth';
+if (await currentOperator(Astro)) return Astro.redirect('/operator');
+---
+<Layout title="Operator sign in" active="operator"><section class="login-panel"><h1>Operator sign in</h1><Login client:load /><noscript>Enable JavaScript to sign in.</noscript><p class="small muted">Contact an administrator for an operator account.</p></section></Layout>

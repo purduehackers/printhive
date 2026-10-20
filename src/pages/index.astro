@@ -1,0 +1,36 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Queue from '../components/Queue';
+import { publicQueue } from '../lib/server/jobs';
+const jobs = await publicQueue();
+const cells = [[0, -69.3], [-60, -34.65], [60, -34.65], [0, 0], [-60, 34.65], [60, 34.65], [0, 69.3]];
+const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 -13 22.5 -26 0 -13 -22.5 13 -22.5Z';
+---
+<Layout active="queue">
+  <section class="hero">
+    <div>
+      <h1>HIVE<br /> <span>3d printing</span></h1>
+      <a class="button primary" href="/submit">Submit a print</a>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg class="honeycomb" viewBox="0 0 420 320" fill="none" focusable="false">
+        <defs>
+          <linearGradient id="honeycomb-top" x1="-100" y1="-100" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#f8da74" /><stop offset="1" stop-color="#edc34c" />
+          </linearGradient>
+        </defs>
+        <g transform="translate(210 135) rotate(-12) scale(1.4 .9)">
+          {Array.from({ length: 12 }, (_, layer) => (
+            <g transform={`translate(0 ${(12 - layer) * 4})`} fill="#dbad39" stroke="#b58c2b" stroke-width=".65">
+              {cells.map(([x, y]) => <path d={hexagon} transform={`translate(${x} ${y})`} fill-rule="evenodd" />)}
+            </g>
+          ))}
+          <g fill="url(#honeycomb-top)" stroke="#ba9638" stroke-width=".8">
+            {cells.map(([x, y]) => <path d={hexagon} transform={`translate(${x} ${y})`} fill-rule="evenodd" />)}
+          </g>
+        </g>
+      </svg>
+    </div>
+  </section>
+  <Queue initial={jobs} client:load />
+</Layout>

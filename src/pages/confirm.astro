@@ -1,0 +1,19 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { confirmation } from '../lib/server/jobs';
+import { smallBody } from '../lib/server/http';
+import { HttpError } from '../lib/server/errors';
+import { logFailure } from '../lib/server/log';
+import { reference, type Job } from '../lib/shared';
+let token = Astro.url.searchParams.get('token') ?? '', job: Job | undefined, already = false, error = '';
+const submitted = Astro.request.method === 'POST';
+try {
+  if (submitted) token = (await smallBody(Astro.request, false)).get('token') ?? '';
+  ({ job, already } = await confirmation(token, submitted));
+} catch (e) {
+  logFailure('confirmation.failed', e, { method: Astro.request.method });
+  error = e instanceof HttpError ? e.message : 'We could not confirm this print. Please try again later.';
+  Astro.response.status = e instanceof HttpError ? e.status : 500;
+}
+---
+<Layout title="Confirm your print"><section class="receipt"><h1>{error ? 'Confirmation failed' : already ? 'Already confirmed' : submitted ? 'Print queued' : 'Confirm your print'}</h1>{error ? <p class="notice error">{error}</p> : <><h2>{job?.title}</h2><p class="mono">#{job && reference(job.id)}</p><p>{already ? `This print has already been confirmed. Its current status is ${job?.status}.` : submitted ? 'Your print is queued. We’ll email you when the operator changes its status.' : 'Press the button below to confirm your print and join the queue.'}</p>{!submitted && !already && <form method="post" action="/confirm"><input type="hidden" name="token" value={token} /><button class="button primary" type="submit">Confirm print</button></form>}</>}<a href={error ? '/submit' : '/'} class={submitted || already || error ? 'button primary' : 'text-button'}>{error ? 'Submit a new print' : 'View queue'}</a></section></Layout>

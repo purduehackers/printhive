@@ -1,9 +1,31 @@
-node_modules
-dist
+# Dependencies and build output
+node_modules/
+dist/
+.astro/
+*.tsbuildinfo
+
+# Local secrets (keep the documented template)
 .env
-.DS_Store
-uploads/*
-!uploads/.gitkeep
-data/*
-!data/.gitkeep
+.env.*
+*.env
+!.env.example
+
+# Runtime files and SQLite sidecars
+data/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Test artifacts and logs
+coverage/
+playwright-report/
+blob-report/
+test-results/
 *.log
+
+# OS metadata
+.DS_Store
+Thumbs.db

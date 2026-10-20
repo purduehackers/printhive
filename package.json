@@ -1,34 +1,40 @@
 {
-  "name": "printhive-v1",
+  "name": "printhive",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "dev:server": "bun --watch server/index.ts",
-    "dev:client": "vite --port 3000",
-    "dev": "concurrently -n \"API,WEB\" -c \"yellow,cyan\" \"bun run dev:server\" \"bun run dev:client\"",
-    "build": "vite build",
-    "start": "bun server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "bun scripts/preflight.ts && bun run db:migrate && bun --bun astro dev --host 0.0.0.0",
+    "check": "bun --bun astro check",
+    "build": "bun --bun astro build",
+    "start": "bun scripts/preflight.ts && bun run db:migrate && bun dist/server/entry.mjs",
+    "test": "bun test tests",
+    "test:e2e": "bun scripts/e2e.ts",
+    "test:browser": "bun scripts/browser-test.ts",
+    "db:migrate": "bun scripts/migrate.ts",
+    "operator:add": "bun scripts/operator.ts",
+    "cleanup": "bun scripts/cleanup.ts"
+  },
+  "engines": {
+    "bun": ">=1.4.3"
   },
   "dependencies": {
-    "@types/nodemailer": "^8.0.2",
-    "lucide-react": "^1.48.0",
-    "nodemailer": "^10.0.12",
-    "pocketbase": "^0.28.1",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "@astrojs/node": "^11.1.8",
+    "@astrojs/react": "^7.1.0",
+    "astro": "^7.4.0",
+    "nodemailer": "^10.1.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "three": "^0.186.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
+    "@astrojs/check": "^0.9.10",
+    "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.3",
+    "@types/nodemailer": "^8.0.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
-    "@vitejs/plugin-react": "^6.1.1",
-    "bun-types": "^1.4.2",
-    "concurrently": "^10.0.5",
-    "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "typescript": "5.9.3"
   }
 }

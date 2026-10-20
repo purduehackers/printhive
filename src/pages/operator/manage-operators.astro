@@ -1,0 +1,17 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import OperatorManager from '../../components/OperatorManager';
+import { currentOperator } from '../../lib/server/auth';
+import { listOperators } from '../../lib/server/operators';
+const operator = await currentOperator(Astro);
+if (!operator) return Astro.redirect('/operator/login');
+const operators = await listOperators();
+---
+<Layout title="Manage operators" active="operator">
+  <div class="page-heading operator-heading">
+    <h1>Manage operators</h1>
+    <a href="/operator" class="button secondary">Back to print jobs</a>
+  </div>
+  <OperatorManager initial={operators} currentId={operator.id} client:load />
+  <noscript>Enable JavaScript to manage operator accounts.</noscript>
+</Layout>
