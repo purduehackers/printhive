@@ -15,9 +15,18 @@ export function db(): Promise<SQL> {
     await sql.unsafe('PRAGMA busy_timeout = 5000');
     return sql;
   })().catch(error => {
+    connection = undefined;
     logError('database.open_failed', error);
     throw error;
   });
+}
+export async function closeDb(): Promise<void> {
+  if (connection) {
+    const c = connection;
+    connection = undefined;
+    const sql = await c.catch(() => null);
+    if (sql) await sql.close();
+  }
 }
 export async function migrate() {
   const sql = await db();

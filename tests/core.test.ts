@@ -8,7 +8,7 @@ import { metadata } from '../src/lib/server/validation';
 import { MAX_FEEDBACK_LENGTH, MAX_FILE_BYTES } from '../src/lib/shared';
 import { parseSTL } from '../src/lib/stl';
 import { seal, unseal } from '../src/lib/server/tokens';
-import { db, migrate } from '../src/lib/server/db';
+import { db, migrate, closeDb } from '../src/lib/server/db';
 import { reserve, upload, confirmation, publicQueue, updateStatus } from '../src/lib/server/jobs';
 import { cleanup } from '../src/lib/server/cleanup';
 import { filePath, storeUpload } from '../src/lib/server/storage';
@@ -32,7 +32,7 @@ beforeAll(async () => {
   const sql = await db(); await sql`INSERT INTO operators (id, username, password_hash) VALUES (1, 'operator', 'test')`;
 });
 beforeEach(async () => { const sql = await db(); await sql`DELETE FROM jobs`; await sql`DELETE FROM sessions`; accepted.length = 0; });
-afterAll(async () => { await (await db()).close(); await rm(dir, { recursive: true, force: true }); });
+afterAll(async () => { await closeDb(); await rm(dir, { recursive: true, force: true }); });
 
 describe('validation and bounded STL parsing', () => {
   test('production React rendering works on the supported Bun runtime', async () => {
@@ -93,7 +93,7 @@ describe('authenticated links and confirmation', () => {
   });
   test('public queue contains no email, notes, filenames or storage references', async () => {
     await queued(); const [job] = await publicQueue();
-    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'color', 'layer_height', 'supports', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version'].sort());
+    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version'].sort());
   });
 });
 describe('upload and delivery failure semantics', () => {

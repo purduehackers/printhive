@@ -64,6 +64,29 @@ try {
   await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toHaveCount(0);
   await page.goto(h.origin + '/operator?status=rejected');
   await expect(page.getByRole('link', { name: 'Browser test bracket', exact: true })).toBeVisible();
+  // Test queue selection, custom grouping, and batch status update
+  await page.getByLabel('Select Browser test bracket').check();
+  await expect(page.getByRole('region', { name: 'Group status actions' })).toBeVisible();
+  await expect(page.getByText('1 print selected')).toBeVisible();
+
+  // Test custom group creation
+  await page.getByRole('button', { name: 'Group selected' }).click();
+  await page.getByPlaceholder('Group name (e.g. Bed 1)').fill('Bed Alpha');
+  await page.getByRole('button', { name: 'Save group' }).click();
+  await expect(page.locator('.group-badge', { hasText: 'Bed Alpha' })).toBeVisible();
+
+  // Test grouping views
+  await page.getByLabel('Group by:').selectOption('custom');
+  await expect(page.locator('.group-title-info', { hasText: 'Bed Alpha' })).toBeVisible();
+  await page.getByLabel('Group by:').selectOption('material-color');
+  await expect(page.getByRole('button', { name: 'Update group status' })).toBeVisible();
+
+  // Test batch status update
+  await page.getByRole('button', { name: 'Update group status' }).click();
+  await page.getByLabel('New status for selected prints').selectOption('queued');
+  await page.getByRole('button', { name: /Update status for 1 print/ }).click();
+  await expect(page.getByRole('status')).toContainText('Successfully updated status to "queued"');
+
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(h.origin + '/operator');
   await page.getByRole('link', { name: 'Manage operators', exact: true }).click();

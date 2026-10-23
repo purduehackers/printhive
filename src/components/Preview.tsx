@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { previewColor } from "../lib/shared";
 interface Model {
   positions: Float32Array;
   min: number[];
@@ -102,16 +103,7 @@ export default function Preview({
     const mesh = new THREE.Mesh(geometry, material);
     meshRef.current = mesh;
     scene.add(mesh);
-    material.color.set(
-      (
-        {
-          black: "#414442",
-          white: "#f5f1e7",
-          yellow: "#efc84a",
-          red: "#c9493b",
-        } as Record<string, string>
-      )[color],
-    );
+    material.color.set(previewColor(color));
     mesh.scale.x = mirror ? -1 : 1;
     scene.add(new THREE.HemisphereLight("#ffffff", "#96988a", 2.5));
     const light = new THREE.DirectionalLight("#ffffff", 3);
@@ -161,16 +153,7 @@ export default function Preview({
   }, [model]);
   useEffect(() => {
     if (!meshRef.current) return;
-    meshRef.current.material.color.set(
-      (
-        {
-          black: "#414442",
-          white: "#f5f1e7",
-          yellow: "#efc84a",
-          red: "#c9493b",
-        } as Record<string, string>
-      )[color],
-    );
+    meshRef.current.material.color.set(previewColor(color));
     meshRef.current.scale.x = mirror ? -1 : 1;
   }, [color, mirror]);
   return (

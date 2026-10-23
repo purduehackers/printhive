@@ -8,16 +8,22 @@ import { removeFile, storeUpload } from './storage';
 import { sendMail, confirmationMessage, statusMessage, type Mailer } from './mail';
 import { MAX_FEEDBACK_LENGTH, transitions, type Job, type PublicJob, type Status } from '../shared';
 import { logError, logFailure } from './log';
+import { listMaterialsWithColors } from './materials';
 
 export async function reserve(input: unknown) {
-  const data = metadata(input), sql = await db(), now = Date.now();
+  let allowedMaterials: { name: string; colors: string[] }[] | undefined;
+  try {
+    const mats = await listMaterialsWithColors();
+    if (mats.length) allowedMaterials = mats.map(m => ({ name: m.name, colors: m.colors.map(c => c.name) }));
+  } catch { /* Fallback to default validation if DB not ready */ }
+  const data = metadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const id = randomUUID(), expires = now + config().uploadTTL;
   // Create the capability before the pending job, so misconfiguration leaves no incomplete submission.
   const capability = seal(id, 'upload', expires);
   const rows = await sql`
-    INSERT INTO jobs (id, email, title, notes, infill, color, layer_height, supports, copies, mirror,
+    INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, copies, mirror,
       original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
-    SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.color}, ${data.layer_height},
+    SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
       ${data.supports}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
       'reserved', ${now + 86400000}, ${expires}, ${now}
     WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < 3
@@ -84,7 +90,7 @@ export async function confirmation(token: string, commit = false) {
 }
 export async function publicQueue(): Promise<PublicJob[]> {
   const sql = await db();
-  return sql`SELECT id, title, status, infill, color, layer_height, supports, copies, mirror, queued_at, confirmed_at, version
+  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, copies, mirror, queued_at, confirmed_at, version
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
 }
@@ -120,4 +126,87 @@ export async function updateStatus(id: string, next: Status, version: number, op
     }
   }
   return { ...result, warning };
+}
+
+export interface BatchStatusItem {
+  id: string;
+  version?: number;
+}
+
+export interface BatchStatusResult {
+  updated: Job[];
+  unchanged: Job[];
+  errors: { id: string; error: string }[];
+  warnings: string[];
+}
+
+export async function batchUpdateStatus(
+  rawItems: unknown,
+  next: Status,
+  operator: number,
+  { feedback: input = '', mailer = sendMail }: { feedback?: unknown; mailer?: Mailer } = {}
+): Promise<BatchStatusResult> {
+  invariant(Object.hasOwn(transitions, next), 400, 'Invalid status update.');
+  invariant(Array.isArray(rawItems) && rawItems.length > 0 && rawItems.length <= 100, 400, 'Must provide between 1 and 100 prints to update.');
+  invariant(typeof input === 'string' && input.length <= MAX_FEEDBACK_LENGTH && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(input),
+    400, `Feedback must be text with at most ${MAX_FEEDBACK_LENGTH} characters.`);
+  const feedback = input.trim();
+  invariant(next !== 'rejected' || feedback.length > 0, 400, 'Provide feedback before rejecting and returning this print.');
+  invariant(next === 'rejected' || feedback.length === 0, 400, 'Feedback is only supported when rejecting and returning a print.');
+
+  const items: BatchStatusItem[] = rawItems.map(item => {
+    if (typeof item === 'string') return { id: item };
+    invariant(item && typeof item === 'object' && typeof (item as any).id === 'string', 400, 'Invalid print ID in batch.');
+    const version = typeof (item as any).version === 'number' && Number.isSafeInteger((item as any).version) ? (item as any).version : undefined;
+    return { id: (item as any).id, version };
+  });
+
+  const sql = await db();
+  const updated: Job[] = [];
+  const unchanged: Job[] = [];
+  const errors: { id: string; error: string }[] = [];
+  const warnings: string[] = [];
+  const toNotify: Job[] = [];
+
+  for (const item of items) {
+    try {
+      const res = await sql.begin(async tx => {
+        const [job]: Job[] = await tx`UPDATE jobs SET version = version WHERE id = ${item.id} AND confirmed_at IS NOT NULL RETURNING *`;
+        if (!job) throw new Error('Print not found.');
+        if (item.version !== undefined && job.version !== item.version) {
+          throw new Error('Another operator changed this print. Refresh before trying again.');
+        }
+        if (job.status === next) return { job, changed: false };
+        if (!transitions[job.status as Status]?.includes(next)) {
+          throw new Error(`Cannot transition from ${job.status} to ${next}.`);
+        }
+        const now = Date.now();
+        const [updatedJob]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
+          queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${item.id} RETURNING *`;
+        await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
+          VALUES (${item.id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback})`;
+        return { job: updatedJob, changed: true };
+      });
+
+      if (res.changed) {
+        updated.push(res.job);
+        toNotify.push(res.job);
+      } else {
+        unchanged.push(res.job);
+      }
+    } catch (err: any) {
+      errors.push({ id: item.id, error: err?.message || 'Update failed.' });
+    }
+  }
+
+  for (const job of toNotify) {
+    try {
+      await mailer(statusMessage(job, feedback), { jobId: job.id, purpose: 'status' });
+    } catch (error) {
+      logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
+      warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+    }
+  }
+
+  return { updated, unchanged, errors, warnings };
 }

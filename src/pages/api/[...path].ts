@@ -1,12 +1,13 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
-import { reserve, upload, publicQueue, updateStatus } from '../../lib/server/jobs';
+import { reserve, upload, publicQueue, updateStatus, batchUpdateStatus } from '../../lib/server/jobs';
 import { login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
 import { invariant } from '../../lib/server/errors';
 import { reference } from '../../lib/shared';
 import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
+import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial } from '../../lib/server/materials';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
@@ -36,6 +37,34 @@ export const ALL: APIRoute = async (context) => {
     }
     if (path === 'logout' && method === 'POST') {
       await logout(context); return context.redirect('/operator/login', 303);
+    }
+    if (path === 'materials' && method === 'GET') {
+      return json(await listMaterialsWithColors());
+    }
+    if (path === 'materials' && method === 'POST') {
+      const actor = await requireOperator(context);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      return json({ material: await addMaterial(actor.id, await smallBody(request)) }, 201);
+    }
+    const materialMatch = /^materials\/([1-9][0-9]*)$/.exec(path);
+    if (materialMatch && method === 'DELETE') {
+      const actor = await requireOperator(context), id = Number(materialMatch[1]);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      await removeMaterial(actor.id, id);
+      return json({ ok: true });
+    }
+    const materialColorMatch = /^materials\/([1-9][0-9]*)\/colors$/.exec(path);
+    if (materialColorMatch && method === 'POST') {
+      const actor = await requireOperator(context), materialId = Number(materialColorMatch[1]);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      return json({ color: await addColor(actor.id, materialId, await smallBody(request)) }, 201);
+    }
+    const colorDeleteMatch = /^materials\/([1-9][0-9]*)\/colors\/([1-9][0-9]*)$/.exec(path);
+    if (colorDeleteMatch && method === 'DELETE') {
+      const actor = await requireOperator(context), materialId = Number(colorDeleteMatch[1]), colorId = Number(colorDeleteMatch[2]);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      await removeColor(actor.id, materialId, colorId);
+      return json({ ok: true });
     }
     if (path === 'operators' && ['GET', 'POST'].includes(method)) {
       const actor = await requireOperator(context);
@@ -76,6 +105,13 @@ export const ALL: APIRoute = async (context) => {
       const operator = await requireOperator(context), body = await smallBody(request);
       invariant(body && typeof body === 'object', 400, 'Invalid status update.');
       return json(await updateStatus(statusMatch[1], body.status, body.version, operator.id, { feedback: body.feedback }));
+    }
+    if (path === 'jobs/batch-status' && method === 'POST') {
+      const operator = await requireOperator(context), body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Invalid status update.');
+      rateLimit('status:' + operator.id, 120, 900000);
+      const items = (body as any).items ?? (body as any).ids;
+      return json(await batchUpdateStatus(items, (body as any).status, operator.id, { feedback: (body as any).feedback }));
     }
     return json({ error: 'Endpoint not found.' }, 404);
   } catch (error) { return errorResponse(error, request); }
