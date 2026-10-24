@@ -38,6 +38,8 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
     </div>
   </section>
 
+  <Queue initial={jobs} client:load />
+
   <section id="printers" class="printers-section" aria-labelledby="printers-heading">
     <div class="section-heading">
       <div>
@@ -92,7 +94,5 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
       ))}
     </div>
   </section>
-
-  <Queue initial={jobs} client:load />
 </Layout>
 
