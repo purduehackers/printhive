@@ -34,6 +34,28 @@ try {
   await page.getByRole('button', { name: 'Confirm print' }).click();
   await expect(page.getByRole('heading', { name: 'Print queued' })).toBeVisible();
   await page.goto(h.origin); await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toBeVisible();
+
+  // Test batch submission of multiple STL files
+  await page.goto(h.origin + '/submit');
+  await page.getByLabel('Project / part title').fill('Batch Rover');
+  await page.getByLabel('STL file', { exact: true }).setInputFiles([
+    { name: 'wheel_left.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
+    { name: 'wheel_right.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
+  ]);
+  await expect(page.getByText('2 STL files selected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove wheel_left.stl', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove wheel_right.stl', exact: true })).toBeVisible();
+  await page.getByLabel('Purdue email').fill('browser@purdue.edu');
+  await page.getByRole('button', { name: 'Send confirmation email' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  const batchLink = h.messages[1].match(/http[^\s]+\/confirm\?token=[^\s]+/)![0];
+  await page.goto(batchLink);
+  await expect(page.getByRole('button', { name: 'Confirm 2 prints' })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm 2 prints' }).click();
+  await expect(page.getByRole('heading', { name: 'Prints queued' })).toBeVisible();
+  await page.goto(h.origin);
+  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_left' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_right' })).toBeVisible();
   await page.goto(h.origin + '/operator/login');
   await page.getByLabel('Username').fill('operator'); await page.getByLabel('Password', { exact: true }).fill('test-password-12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -73,6 +95,12 @@ try {
   await page.getByLabel('Select Browser test bracket').check();
   await expect(page.getByRole('region', { name: 'Group status actions' })).toBeVisible();
   await expect(page.getByText('1 print selected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download selected STLs ↓' })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download selected STLs ↓' }).click();
+  const downloadedFile = await downloadPromise;
+  expect(downloadedFile.suggestedFilename()).toMatch(/^printhive-[A-F0-9]{8}-bracket\.stl$/);
 
   // Test custom group creation
   await page.getByRole('button', { name: 'Group selected' }).click();

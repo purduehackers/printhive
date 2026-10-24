@@ -1,21 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db';
 import { config } from './config';
-import { metadata } from './validation';
+import { metadata, batchMetadata } from './validation';
 import { seal, unseal } from './tokens';
 import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
 import { sendMail, confirmationMessage, statusMessage, type Mailer } from './mail';
-import { MAX_FEEDBACK_LENGTH, transitions, type Job, type PublicJob, type Status } from '../shared';
+import { MAX_BATCH_SIZE, MAX_FEEDBACK_LENGTH, transitions, type Job, type PublicJob, type Status } from '../shared';
 import { logError, logFailure } from './log';
 import { listMaterialsWithColors } from './materials';
 
-export async function reserve(input: unknown) {
+async function loadAllowedMaterials() {
   let allowedMaterials: { name: string; colors: string[] }[] | undefined;
   try {
     const mats = await listMaterialsWithColors();
     if (mats.length) allowedMaterials = mats.map(m => ({ name: m.name, colors: m.colors.map(c => c.name) }));
   } catch { /* Fallback to default validation if DB not ready */ }
+  return allowedMaterials;
+}
+
+export async function reserve(input: unknown) {
+  const allowedMaterials = await loadAllowedMaterials();
   const data = metadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const id = randomUUID(), expires = now + config().uploadTTL;
   // Create the capability before the pending job, so misconfiguration leaves no incomplete submission.
@@ -26,15 +31,45 @@ export async function reserve(input: unknown) {
     SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
       ${data.supports}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
       'reserved', ${now + 86400000}, ${expires}, ${now}
-    WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < 3
+    WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < ${MAX_BATCH_SIZE * 3}
     RETURNING id`;
-  invariant(rows.length, 429, 'You have three unconfirmed submissions. Confirm them or try again after cleanup.');
+  invariant(rows.length, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
   return { id, capability };
 }
+
+export async function reserveBatch(input: unknown) {
+  const allowedMaterials = await loadAllowedMaterials();
+  const itemsData = batchMetadata(input, allowedMaterials), sql = await db(), now = Date.now();
+  const expires = now + config().uploadTTL;
+  const ids = itemsData.map(() => randomUUID());
+  // Seal all capabilities and the batch token first so misconfiguration leaves no incomplete submission.
+  const items = itemsData.map((data, idx) => ({
+    id: ids[idx],
+    title: data.title,
+    original_filename: data.original_filename,
+    capability: seal(ids[idx], 'upload', expires),
+  }));
+  const batchToken = seal(ids, 'upload', expires);
+  await sql.begin(async tx => {
+    const [{ count }] = await tx`SELECT COUNT(*) AS count FROM jobs WHERE email = ${itemsData[0].email} AND status = 'pending_confirmation'`;
+    invariant(Number(count) + itemsData.length <= MAX_BATCH_SIZE * 3, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
+    for (let i = 0; i < itemsData.length; i++) {
+      const data = itemsData[i], id = ids[i];
+      await tx`
+        INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, copies, mirror,
+          original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
+        VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
+          ${data.supports}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
+          'reserved', ${now + 86400000}, ${expires}, ${now + i})`;
+    }
+  });
+  return { items, batchToken };
+}
+
 let activeUploads = 0;
-export async function upload(id: string, token: string, request: Request, mailer: Mailer = sendMail) {
+export async function upload(id: string, token: string, request: Request, mailer: Mailer = sendMail, { deferEmail = false }: { deferEmail?: boolean } = {}) {
   const payload = unseal(token, 'upload');
-  invariant(payload.id === id, 403, 'This upload link belongs to another print.');
+  invariant(payload.id === id && payload.ids.length === 1, 403, 'This upload link belongs to another print.');
   const sql = await db();
   invariant(activeUploads < config().maxUploads, 503, 'The upload slots are busy. Please try again shortly.');
   activeUploads++;
@@ -49,6 +84,9 @@ export async function upload(id: string, token: string, request: Request, mailer
     const [updated] = await sql`UPDATE jobs SET upload_state = 'uploaded', pending_expires_at = ${expiry}
       WHERE id = ${id} AND upload_state = 'uploading' AND upload_expires_at > ${Date.now()} RETURNING *`;
     invariant(updated, 410, 'The upload expired. Please try again.');
+    if (deferEmail) {
+      return { id, uploaded: true };
+    }
     try { await mailer(confirmationMessage(updated, seal(id, 'confirm', expiry)), { jobId: id, purpose: 'confirmation' }); }
     catch (cause) { throw new HttpError(502, 'We could not send the confirmation email. Your submission was removed; please try again later.', { cause }); }
     const ready = await sql`UPDATE jobs SET upload_state = 'ready'
@@ -69,24 +107,90 @@ export async function upload(id: string, token: string, request: Request, mailer
     throw e;
   } finally { activeUploads--; }
 }
-export async function confirmation(token: string, commit = false) {
-  const { id } = unseal(token, 'confirm');
+
+export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMail) {
+  const payload = unseal(batchToken, 'upload');
+  const ids = payload.ids;
   const sql = await db();
-  const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
-  invariant(job, 410, 'This submission is no longer available. Please submit your print again.');
-  if (job.confirmed_at) return { job, already: true };
-  invariant(job.pending_expires_at > Date.now(), 410, 'This confirmation has expired. Please submit again.');
-  invariant(job.upload_state === 'ready', 409, 'This submission is not ready. Wait a moment and open the link again.');
+  const jobs: Job[] = [];
+  for (const id of ids) {
+    const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
+    invariant(job, 410, 'One or more prints in this batch are no longer available. Please submit again.');
+    invariant(job.status === 'pending_confirmation' && job.upload_expires_at > Date.now(), 410, 'The batch upload expired. Please try again.');
+    invariant(job.upload_state === 'uploaded', 409, 'All files in the batch must finish uploading before sending the confirmation email.');
+    jobs.push(job);
+  }
+  const expiry = Date.now() + 86400000;
+  try {
+    for (const id of ids) {
+      const updated = await sql`UPDATE jobs SET pending_expires_at = ${expiry}
+        WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${Date.now()} RETURNING id`;
+      invariant(updated.length, 410, 'The batch upload expired. Please try again.');
+    }
+    try {
+      await mailer(confirmationMessage(jobs, seal(ids, 'confirm', expiry)), { jobId: ids[0], purpose: 'confirmation' });
+    } catch (cause) {
+      throw new HttpError(502, 'We could not send the confirmation email. Your batch submission was removed; please try again later.', { cause });
+    }
+    for (const id of ids) {
+      const ready = await sql`UPDATE jobs SET upload_state = 'ready'
+        WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
+      invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
+    }
+    return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
+  } catch (e) {
+    logFailure('submission.failed', e, { jobId: ids[0] });
+    try {
+      for (const job of jobs) {
+        await sql`DELETE FROM jobs WHERE id = ${job.id} AND status = 'pending_confirmation'`;
+        await removeFile(job.storage_key);
+      }
+    } catch (cleanupError) {
+      logError('submission.cleanup_failed', cleanupError, { jobId: ids[0] });
+      throw new HttpError(500, 'The submission failed and cleanup could not finish. Please contact the operator.', { cause: e });
+    }
+    throw e;
+  }
+}
+
+export async function confirmation(token: string, commit = false) {
+  const { ids } = unseal(token, 'confirm');
+  const sql = await db();
+  const jobs: Job[] = [];
+  for (const id of ids) {
+    const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
+    invariant(job, 410, 'This submission is no longer available. Please submit your print again.');
+    jobs.push(job);
+  }
+  if (jobs.every(j => Boolean(j.confirmed_at))) return { job: jobs[0], jobs, already: true };
+  for (const job of jobs) {
+    if (job.confirmed_at) continue;
+    invariant(job.pending_expires_at > Date.now(), 410, 'This confirmation has expired. Please submit again.');
+    invariant(job.upload_state === 'ready', 409, 'This submission is not ready. Wait a moment and open the link again.');
+  }
   if (commit) {
     const now = Date.now();
-    const rows = await sql`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
-      WHERE id = ${id} AND status = 'pending_confirmation' AND upload_state = 'ready' AND pending_expires_at > ${now} RETURNING *`;
-    if (rows.length) return { job: rows[0] as Job, already: false };
-    const [current]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
-    invariant(current?.confirmed_at, 410, 'This confirmation expired. Please submit again.');
-    return { job: current, already: true };
+    const result = await sql.begin(async tx => {
+      const updatedJobs: Job[] = [];
+      let anyUpdated = false;
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const rows = await tx`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+          WHERE id = ${id} AND status = 'pending_confirmation' AND upload_state = 'ready' AND pending_expires_at > ${now} RETURNING *`;
+        if (rows.length) {
+          updatedJobs.push(rows[0] as Job);
+          anyUpdated = true;
+        } else {
+          const [current]: Job[] = await tx`SELECT * FROM jobs WHERE id = ${id}`;
+          invariant(current?.confirmed_at, 410, 'This confirmation expired. Please submit again.');
+          updatedJobs.push(current);
+        }
+      }
+      return { job: updatedJobs[0], jobs: updatedJobs, already: !anyUpdated };
+    });
+    return result;
   }
-  return { job, already: false };
+  return { job: jobs[0], jobs, already: false };
 }
 export async function publicQueue(): Promise<PublicJob[]> {
   const sql = await db();

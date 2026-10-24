@@ -1,4 +1,4 @@
-import { COLORS, INFILLS, LAYERS, MAX_FILE_BYTES, SUPPORTS } from '../shared';
+import { COLORS, INFILLS, LAYERS, MAX_BATCH_SIZE, MAX_FILE_BYTES, SUPPORTS } from '../shared';
 import { invariant } from './errors';
 
 export function metadata(input: unknown, allowedMaterials?: { name: string; colors: string[] }[]) {
@@ -53,4 +53,42 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
     layer_height: choice('layer_height', LAYERS, 0.2), supports: choice('supports', SUPPORTS, 'operator'),
     copies: choice('copies', [1, 2, 3, 4, 5], 1), mirror: choice('mirror', [0, 1], 0),
   };
+}
+
+export function batchMetadata(input: unknown, allowedMaterials?: { name: string; colors: string[] }[]) {
+  invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid batch submission.');
+  const d = input as Record<string, unknown>;
+  invariant(Array.isArray(d.items) && d.items.length >= 1 && d.items.length <= MAX_BATCH_SIZE, 400, `Choose between 1 and ${MAX_BATCH_SIZE} STL files.`);
+  const baseTitle = typeof d.title === 'string' ? d.title.trim() : '';
+  return d.items.map((rawItem, index) => {
+    invariant(rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem), 400, 'Invalid item in batch.');
+    const item = rawItem as Record<string, unknown>;
+    const filename = typeof item.original_filename === 'string' ? item.original_filename.trim() : '';
+    const stem = filename.replace(/\.stl$/i, '').trim() || `Part ${index + 1}`;
+    let itemTitle = typeof item.title === 'string' && item.title.trim() ? item.title.trim() : '';
+    if (!itemTitle) {
+      if (d.items && (d.items as unknown[]).length === 1 && baseTitle) {
+        itemTitle = baseTitle.slice(0, 200);
+      } else if (baseTitle) {
+        const suffix = ` · ${stem}`;
+        itemTitle = (baseTitle.slice(0, Math.max(1, 200 - suffix.length)) + suffix).slice(0, 200);
+      } else {
+        itemTitle = stem.slice(0, 200);
+      }
+    }
+    return metadata({
+      ...d,
+      title: itemTitle,
+      original_filename: item.original_filename,
+      file_size: item.file_size,
+      notes: item.notes ?? d.notes,
+      infill: item.infill ?? d.infill,
+      material: item.material ?? d.material,
+      color: item.color ?? d.color,
+      layer_height: item.layer_height ?? d.layer_height,
+      supports: item.supports ?? d.supports,
+      copies: item.copies ?? d.copies,
+      mirror: item.mirror ?? d.mirror,
+    }, allowedMaterials);
+  });
 }

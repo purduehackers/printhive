@@ -29,9 +29,19 @@ export const sendMail: Mailer = async (message, context) => {
     throw error;
   } finally { transport?.close(); }
 };
-export function confirmationMessage(job: Job, token: string): Message {
-  return { to: job.email, subject: `Confirm your PrintHive job · ${reference(job.id)}`,
-    text: `Your print: ${job.title}\nReference: ${reference(job.id)}\n\nOpen this link, then press Confirm print to join the queue:\n${config().origin}/confirm?token=${encodeURIComponent(token)}\n\nThis link expires in 24 hours. Your job is not queued until you confirm it.\n\nIf you did not request this print, ignore this email.` };
+export function confirmationMessage(job: Job | Job[], token: string): Message {
+  const jobs = Array.isArray(job) ? job : [job];
+  if (jobs.length === 1) {
+    const single = jobs[0];
+    return { to: single.email, subject: `Confirm your PrintHive job · ${reference(single.id)}`,
+      text: `Your print: ${single.title}\nReference: ${reference(single.id)}\n\nOpen this link, then press Confirm print to join the queue:\n${config().origin}/confirm?token=${encodeURIComponent(token)}\n\nThis link expires in 24 hours. Your job is not queued until you confirm it.\n\nIf you did not request this print, ignore this email.` };
+  }
+  const list = jobs.map(j => `- ${j.title} (#${reference(j.id)})`).join('\n');
+  return {
+    to: jobs[0].email,
+    subject: `Confirm your PrintHive batch (${jobs.length} prints) · ${reference(jobs[0].id)}`,
+    text: `Your batch submission (${jobs.length} prints):\n${list}\n\nOpen this link, then press Confirm prints to join the queue:\n${config().origin}/confirm?token=${encodeURIComponent(token)}\n\nThis link expires in 24 hours. Your jobs are not queued until you confirm them.\n\nIf you did not request these prints, ignore this email.`,
+  };
 }
 export function statusMessage(job: Job, feedback = ''): Message {
   if (job.status === 'rejected') return {

@@ -102,6 +102,26 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
     setSelectedIds(new Set(groupJobIds));
   };
 
+  const downloadJobFiles = (jobIds: string[]) => {
+    jobIds.forEach((id, idx) => {
+      setTimeout(() => {
+        const job = jobs.find(j => j.id === id);
+        const safeStem = (job?.original_filename ?? 'part.stl')
+          .replace(/\.stl$/i, '')
+          .replace(/[^A-Za-z0-9._-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 80) || 'part';
+        const link = document.createElement('a');
+        link.href = `/api/jobs/${id}/file`;
+        link.download = `printhive-${reference(id)}-${safeStem}.stl`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }, idx * 150);
+    });
+  };
+
   // Update header checkbox indeterminate state
   useEffect(() => {
     if (headerCheckboxRef.current) {
@@ -330,6 +350,14 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
               <button
                 type="button"
                 className="button secondary"
+                onClick={() => downloadJobFiles(Array.from(selectedIds))}
+                disabled={busy}
+              >
+                Download selected STLs ↓
+              </button>
+              <button
+                type="button"
+                className="button secondary"
                 onClick={() => setGroupingModalOpen(prev => !prev)}
                 disabled={busy}
               >
@@ -486,6 +514,13 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                           </span>
                         </div>
                         <div className="group-actions">
+                          <button
+                            type="button"
+                            className="button secondary"
+                            onClick={() => downloadJobFiles(groupJobIds)}
+                          >
+                            Download group STLs ↓
+                          </button>
                           <button
                             type="button"
                             className="button secondary"

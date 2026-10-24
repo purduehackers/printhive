@@ -1,4 +1,5 @@
 export const MAX_FILE_BYTES = 500 * 1024 * 1024;
+export const MAX_BATCH_SIZE = 10;
 export const INFILLS = [15, 20, 30, 50] as const;
 export const COLORS = ['black', 'white', 'yellow', 'red'] as const;
 export const LAYERS = [0.12, 0.16, 0.2, 0.28] as const;

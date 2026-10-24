@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
-import { reserve, upload, publicQueue, updateStatus, batchUpdateStatus } from '../../lib/server/jobs';
+import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus } from '../../lib/server/jobs';
 import { login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
@@ -18,14 +18,24 @@ export const ALL: APIRoute = async (context) => {
       return json({ ok: true });
     }
     if (path === 'submissions' && method === 'POST') {
-      rateLimit('submit:' + clientIP(context), 10, 3600000);
+      rateLimit('submit:' + clientIP(context), 15, 3600000);
       const body = await smallBody(request);
       return json(await reserve(body), 201);
+    }
+    if (path === 'submissions/batch' && method === 'POST') {
+      rateLimit('submit:' + clientIP(context), 15, 3600000);
+      const body = await smallBody(request);
+      return json(await reserveBatch(body), 201);
+    }
+    if (path === 'submissions/batch/finalize' && method === 'POST') {
+      const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
+      return json(await finalizeBatch(token));
     }
     const uploadMatch = /^submissions\/([a-f0-9-]{36})\/file$/.exec(path);
     if (uploadMatch && method === 'PUT') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
-      return json(await upload(uploadMatch[1], token, request));
+      const deferEmail = new URL(request.url).searchParams.get('batch') === '1';
+      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail }));
     }
     if (path === 'login' && method === 'POST') {
       rateLimit('login:' + clientIP(context), 10, 900000);
@@ -92,12 +102,13 @@ export const ALL: APIRoute = async (context) => {
     if (downloadMatch && method === 'GET') {
       await requireOperator(context);
       const sql = await db();
-      const [job] = await sql`SELECT storage_key FROM jobs WHERE id = ${downloadMatch[1]} AND confirmed_at IS NOT NULL`;
+      const [job] = await sql`SELECT storage_key, original_filename FROM jobs WHERE id = ${downloadMatch[1]} AND confirmed_at IS NOT NULL`;
       invariant(job, 404, 'Print not found.');
       const file = Bun.file(filePath(job.storage_key));
       invariant(await file.exists(), 404, 'The STL file is missing. Contact the administrator.');
+      const safeStem = String(job.original_filename ?? 'part.stl').replace(/\.stl$/i, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'part';
       return new Response(file.stream(), { headers: { 'Content-Type': 'application/octet-stream',
-        'Content-Length': String(file.size), 'Content-Disposition': `attachment; filename="printhive-${reference(downloadMatch[1])}.stl"`,
+        'Content-Length': String(file.size), 'Content-Disposition': `attachment; filename="printhive-${reference(downloadMatch[1])}-${safeStem}.stl"`,
         'Cache-Control': 'no-store' } });
     }
     const statusMatch = /^jobs\/([a-f0-9-]{36})\/status$/.exec(path);
