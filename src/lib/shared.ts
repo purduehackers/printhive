@@ -87,3 +87,60 @@ export interface Job extends Omit<PublicJob, 'status'> {
 }
 export const reference = (id: string) => id.slice(0, 8).toUpperCase();
 export const supportLabel = (value: string) => value === 'operator' ? 'Operator decides' : value === 'tree' ? 'Tree' : 'None';
+
+export interface PrinterSpec {
+  id: string;
+  name: string;
+  manufacturer: string;
+  buildVolume: { x: number; y: number; z: number };
+  buildVolumeFormatted: string;
+  technology: string;
+  chamber: string;
+  maxNozzleTemp: string;
+  features: string[];
+  description: string;
+}
+
+export const AVAILABLE_PRINTERS: PrinterSpec[] = [
+  {
+    id: 'bambu-h2d',
+    name: 'Bambu H2D',
+    manufacturer: 'Bambu Lab',
+    buildVolume: { x: 350, y: 320, z: 325 },
+    buildVolumeFormatted: '350 × 320 × 325 mm',
+    technology: 'Dual-Nozzle CoreXY',
+    chamber: 'Active heating (up to 65°C)',
+    maxNozzleTemp: '350°C',
+    features: [
+      'Dual-nozzle multi-material extrusion',
+      'Active chamber heating (65°C)',
+      'High-temp nozzle (350°C)',
+      'High-speed precision servo motion',
+    ],
+    description: 'Large-format dual-nozzle system ideal for multi-material prints and high-temperature engineering polymers without purge waste.',
+  },
+  {
+    id: 'prusa-core-one-plus',
+    name: 'Prusa Core ONE+',
+    manufacturer: 'Prusa Research',
+    buildVolume: { x: 250, y: 220, z: 270 },
+    buildVolumeFormatted: '250 × 220 × 270 mm',
+    technology: 'Fully Enclosed CoreXY',
+    chamber: 'Active temperature regulation',
+    maxNozzleTemp: '300°C',
+    features: [
+      'Fully enclosed active temperature regulation',
+      'Nextruder with quick-swap nozzles',
+      'High-speed CoreXY kinematics',
+      'Exceptional precision & dimensional accuracy',
+    ],
+    description: 'Fully enclosed high-performance printer engineered for dimensional accuracy, crisp detail, and reliable printing across PLA, PETG, ABS, and ASA.',
+  },
+];
+
+export function checkPrinterFit(dimensions: [number, number, number], printer: PrinterSpec): boolean {
+  const modelSorted = [...dimensions].sort((a, b) => a - b);
+  const bedSorted = [printer.buildVolume.x, printer.buildVolume.y, printer.buildVolume.z].sort((a, b) => a - b);
+  return modelSorted[0] <= bedSorted[0] && modelSorted[1] <= bedSorted[1] && modelSorted[2] <= bedSorted[2];
+}
+

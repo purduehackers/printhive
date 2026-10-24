@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { previewColor } from "../lib/shared";
+import { previewColor, AVAILABLE_PRINTERS, checkPrinterFit } from "../lib/shared";
 interface Model {
   positions: Float32Array;
   min: number[];
@@ -217,6 +217,33 @@ export default function Preview({
             </strong>
           )}
         </p>
+      )}
+      {model && (
+        <div className="printer-fit-info">
+          <span className="fit-label">Fleet Build Fit</span>
+          <div className="fit-badges">
+            {AVAILABLE_PRINTERS.map((printer) => {
+              const fits = checkPrinterFit(
+                [
+                  model.max[0] - model.min[0],
+                  model.max[1] - model.min[1],
+                  model.max[2] - model.min[2],
+                ],
+                printer,
+              );
+              return (
+                <span
+                  key={printer.id}
+                  className={`fit-badge ${fits ? "fits" : "exceeds"}`}
+                >
+                  <span className="fit-icon" aria-hidden="true">{fits ? "✓" : "✕"}</span>
+                  <span className="fit-name">{printer.name}:</span>
+                  <strong className="fit-status">{fits ? "Fits" : "Exceeds"}</strong>
+                </span>
+              );
+            })}
+          </div>
+        </div>
       )}
       {message && (
         <p className="notice" role="status">

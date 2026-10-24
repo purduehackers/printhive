@@ -11,6 +11,11 @@ try {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(h.origin);
   await expect(page.getByRole('heading', { name: 'HIVE 3d printing', exact: true })).toBeVisible();
+  const firstPrinterDetails = page.locator('.printer-details').first();
+  await expect(firstPrinterDetails).not.toHaveAttribute('open', '');
+  await page.getByText('Description & capabilities').first().click();
+  await expect(firstPrinterDetails).toHaveAttribute('open', '');
+  await expect(page.getByText('Large-format dual-nozzle system ideal for multi-material prints')).toBeVisible();
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/queue-desktop.png', fullPage: true });
   await page.goto(h.origin + '/submit');

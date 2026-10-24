@@ -1,6 +1,6 @@
 # PrintHive
 
-An Astro + React 3D printing queue running on Bun. SQLite is accessed through `Bun.SQL`; original STLs stay in a private directory on disk. The public queue lists printing and queued jobs, while operators can download files, manage statuses, and view history.
+An Astro + React 3D printing queue running on Bun. SQLite is accessed through `Bun.SQL`; original STLs stay in a private directory on disk. The public queue lists printing and queued jobs, while operators can download files, manage statuses, and view history. Currently equipped with a Bambu H2D and Prusa Core ONE+.
 
 ## Local development
 

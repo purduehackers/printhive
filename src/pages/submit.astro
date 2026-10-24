@@ -2,6 +2,47 @@
 import Layout from '../layouts/Layout.astro';
 import SubmissionForm from '../components/SubmissionForm';
 import { listMaterialsWithColors } from '../lib/server/materials';
+import { AVAILABLE_PRINTERS } from '../lib/shared';
+
 const materials = await listMaterialsWithColors();
 ---
-<Layout title="Submit a print" active="submit"><div class="page-heading"><h1>Submit a print</h1></div><SubmissionForm initialMaterials={materials} client:load /><noscript><p class="notice">Enable JavaScript to upload and preview your STL.</p></noscript></Layout>
+<Layout title="Submit a print" active="submit">
+  <div class="page-heading">
+    <h1>Submit a print</h1>
+    <p>Upload your STL model, choose materials and slice settings, and our operators will queue it on our Bambu H2D or Prusa Core ONE+.</p>
+  </div>
+
+  <section class="submit-fleet-summary" aria-label="Available printers build limits">
+    <div class="fleet-summary-header">
+      <strong>Available Fleet &amp; Build Volumes</strong>
+      <span class="small muted">Models must fit within machine boundaries</span>
+    </div>
+    <div class="fleet-chips">
+      {AVAILABLE_PRINTERS.map(printer => (
+        <details class="fleet-chip-details">
+          <summary class="fleet-chip">
+            <div class="fleet-chip-main">
+              <span class="fleet-chip-name">{printer.name}</span>
+              <span class="fleet-chip-manufacturer small muted">{printer.manufacturer}</span>
+            </div>
+            <span class="fleet-chip-volume mono">{printer.buildVolumeFormatted}</span>
+            <span class="fleet-chip-tech small muted">{printer.technology}</span>
+            <svg class="dropdown-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </summary>
+          <div class="fleet-chip-content">
+            <p class="printer-description">{printer.description}</p>
+            <ul class="printer-features">
+              {printer.features.map(f => (
+                <li>{f}</li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      ))}
+    </div>
+  </section>
+
+  <SubmissionForm initialMaterials={materials} client:load />
+  <noscript><p class="notice">Enable JavaScript to upload and preview your STL.</p></noscript>
+</Layout>
+
