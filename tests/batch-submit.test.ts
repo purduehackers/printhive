@@ -118,8 +118,10 @@ describe('batch submission flow', () => {
     expect(preview.already).toBe(false);
     expect(await publicQueue()).toHaveLength(0);
 
-    // POST confirmation enqueues all 3 prints in order
-    const confirmed = await confirmation(token, true);
+    // Racing POST confirmations enqueue all 3 prints once in order
+    const raceResults = await Promise.all([confirmation(token, true), confirmation(token, true)]);
+    expect(raceResults.filter(r => !r.already)).toHaveLength(1);
+    const confirmed = raceResults.find(r => !r.already)!;
     expect(confirmed.jobs).toHaveLength(3);
     expect(confirmed.already).toBe(false);
 

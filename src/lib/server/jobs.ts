@@ -50,19 +50,17 @@ export async function reserveBatch(input: unknown) {
     capability: seal(ids[idx], 'upload', expires),
   }));
   const batchToken = seal(ids, 'upload', expires);
-  await sql.begin(async tx => {
-    const [{ count }] = await tx`SELECT COUNT(*) AS count FROM jobs WHERE email = ${itemsData[0].email} AND status = 'pending_confirmation'`;
-    invariant(Number(count) + itemsData.length <= MAX_BATCH_SIZE * 3, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
-    for (let i = 0; i < itemsData.length; i++) {
-      const data = itemsData[i], id = ids[i];
-      await tx`
-        INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, copies, mirror,
-          original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
-        VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
-          ${data.supports}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
-          'reserved', ${now + 86400000}, ${expires}, ${now + i})`;
-    }
-  });
+  const [{ count }] = await sql`SELECT COUNT(*) AS count FROM jobs WHERE email = ${itemsData[0].email} AND status = 'pending_confirmation'`;
+  invariant(Number(count) + itemsData.length <= MAX_BATCH_SIZE * 3, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
+  for (let i = 0; i < itemsData.length; i++) {
+    const data = itemsData[i], id = ids[i];
+    await sql`
+      INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, copies, mirror,
+        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
+      VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
+        ${data.supports}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
+        'reserved', ${now + 86400000}, ${expires}, ${now + i})`;
+  }
   return { items, batchToken };
 }
 
@@ -153,6 +151,8 @@ export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMai
   }
 }
 
+let confirmChain: Promise<unknown> = Promise.resolve();
+
 export async function confirmation(token: string, commit = false) {
   const { ids } = unseal(token, 'confirm');
   const sql = await db();
@@ -169,26 +169,28 @@ export async function confirmation(token: string, commit = false) {
     invariant(job.upload_state === 'ready', 409, 'This submission is not ready. Wait a moment and open the link again.');
   }
   if (commit) {
-    const now = Date.now();
-    const result = await sql.begin(async tx => {
+    const run = async () => {
+      const now = Date.now();
       const updatedJobs: Job[] = [];
       let anyUpdated = false;
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i];
-        const rows = await tx`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+        const rows = await sql`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
           WHERE id = ${id} AND status = 'pending_confirmation' AND upload_state = 'ready' AND pending_expires_at > ${now} RETURNING *`;
         if (rows.length) {
           updatedJobs.push(rows[0] as Job);
           anyUpdated = true;
         } else {
-          const [current]: Job[] = await tx`SELECT * FROM jobs WHERE id = ${id}`;
+          const [current]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
           invariant(current?.confirmed_at, 410, 'This confirmation expired. Please submit again.');
           updatedJobs.push(current);
         }
       }
       return { job: updatedJobs[0], jobs: updatedJobs, already: !anyUpdated };
-    });
-    return result;
+    };
+    const next = confirmChain.then(run, run);
+    confirmChain = next.then(() => undefined, () => undefined);
+    return next;
   }
   return { job: jobs[0], jobs, already: false };
 }
