@@ -13,7 +13,14 @@ import {
   type SupportOverlay,
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
-import { previewColor, AVAILABLE_PRINTERS } from "../lib/shared";
+import { previewColor } from "../lib/shared";
+import {
+  PREVIEW_PRINTERS,
+  selectPreviewPrinter,
+  fitsPreviewPrinter,
+  profileForPreviewBed,
+  formatPrintTime,
+} from "../lib/preview";
 import {
   IDENTITY_ROTATION,
   poseMatrix,
@@ -22,6 +29,9 @@ import {
 } from "@time-estimator/browser-preview/pose";
 
 interface Model {
+  file: File;
+  rotation: number[];
+  mirror: boolean;
   positions: Float32Array;
   min: number[];
   max: number[];
@@ -30,6 +40,7 @@ interface Model {
 interface Props {
   file: File | null;
   color: string;
+  copies: number;
   mirror: boolean;
   infill: number;
   layerHeight: number;
@@ -49,6 +60,7 @@ const categories = [
 export default function Preview({
   file,
   color,
+  copies,
   mirror,
   infill,
   layerHeight,
@@ -60,6 +72,7 @@ export default function Preview({
   const host = useRef<HTMLDivElement>(null);
   const fileWorker = useRef<Worker | null>(null);
   const client = useRef<PreviewClient<File> | null>(null);
+  const orientationClient = useRef<PreviewClient<File> | null>(null);
   const meshRef = useRef<THREE.Mesh<
     THREE.BufferGeometry,
     THREE.MeshStandardMaterial
@@ -71,20 +84,34 @@ export default function Preview({
   const revision = useRef(0);
   const faceAction = useRef<(normal: number[]) => void>(() => {});
   const faceModeRef = useRef(false);
-  const [model, setModel] = useState<Model | null>(null);
+  const [loadedModel, setModel] = useState<Model | null>(null);
   const [profile, setProfile] = useState<PreviewProfile | null>(null);
   const [preview, setPreview] = useState<SupportPreview | null>(null);
   const [tab, setTab] = useState<"model" | "layers">("model");
   const [reading, setReading] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [orienting, setOrienting] = useState(false);
+  const [calculating, setCalculating] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   const [message, setMessage] = useState("");
   const [layerIndex, setLayerIndex] = useState(0);
   const [onlyLayer, setOnlyLayer] = useState(false);
-  const [progress, setProgress] = useState(100);
-  const [playing, setPlaying] = useState(false);
   const [hidden, setHidden] = useState<string[]>([]);
   const [faceMode, setFaceMode] = useState(false);
-  const [operation, setOperation] = useState("Preparing preview…");
+  const model =
+    loadedModel?.file === file &&
+    loadedModel.rotation === rotation &&
+    loadedModel.mirror === mirror
+      ? loadedModel
+      : null;
+  const modelDimensions = model
+    ? model.min.map((value, i) => model.max[i] - value)
+    : [];
+  const printer = model
+    ? selectPreviewPrinter(modelDimensions)
+    : PREVIEW_PRINTERS[0];
+  const fits = model ? fitsPreviewPrinter(modelDimensions, printer) : true;
+  const modelReady = Boolean(model);
   faceModeRef.current = faceMode && !disabled;
   faceAction.current = (normal) => {
     onRotationChange(multiplyRotations(rotationForFace(normal), rotation));
@@ -95,32 +122,46 @@ export default function Preview({
     const controller = new AbortController();
     fetch("/preview-profile.json", { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) return;
+        if (!response.ok) throw new Error("Missing preview profile");
         const value = await response.json();
-        if (value.id && value.configuration) setProfile(value);
+        if (!value.id || !value.configuration)
+          throw new Error("Invalid preview profile");
+        if (!controller.signal.aborted) setProfile(value);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setMessage("Couldn't load print-time settings. Reload to try again.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProfileLoading(false);
+      });
     return () => {
       controller.abort();
       client.current?.dispose();
+      orientationClient.current?.dispose();
       client.current = null;
+      orientationClient.current = null;
     };
   }, []);
 
   useEffect(() => {
     revision.current++;
     client.current?.cancel();
+    orientationClient.current?.cancel();
     overlayRef.current?.dispose();
     overlayRef.current = null;
     setPreview(null);
-    setBusy(false);
-    setPlaying(false);
-    setTab("model");
+    setOrienting(false);
     setMessage("");
   }, [file, mirror, rotation, infill, layerHeight, supports]);
 
-  function getClient() {
-    return (client.current ??= createPreviewClient<File>({
+  useEffect(() => {
+    setTab("model");
+    setFaceMode(false);
+  }, [file]);
+
+  function makeClient() {
+    return createPreviewClient<File>({
       manifestUrl: new URL(
         "/preview-engine/manifest.json",
         window.location.origin,
@@ -129,18 +170,19 @@ export default function Preview({
         new Worker(new URL("../workers/support.worker.ts", import.meta.url), {
           type: "module",
         }),
-    }));
+    });
   }
 
   async function autoOrient() {
-    if (!file || busy || disabled) return;
+    if (!file || orienting || disabled) return;
     const currentRevision = ++revision.current;
-    setBusy(true);
+    client.current?.cancel();
+    setOrienting(true);
     setTab("model");
     setMessage("");
-    setOperation("Finding an orientation…");
     try {
-      const result = await getClient().orient({
+      orientationClient.current ??= makeClient();
+      const result = await orientationClient.current.orient({
         input: file,
         rotation,
         mirrorX: mirror,
@@ -153,87 +195,93 @@ export default function Preview({
       if (revision.current === currentRevision)
         setMessage(
           (error as { code?: string }).code === "canceled"
-            ? "Preview canceled."
+            ? "Orientation canceled."
             : error instanceof Error
               ? error.message.slice(0, 200)
               : "Couldn't find an orientation. Choose a face instead.",
         );
     } finally {
-      if (revision.current === currentRevision) setBusy(false);
+      if (revision.current === currentRevision) setOrienting(false);
     }
   }
 
-  async function showLayers() {
-    if (preview) {
-      setTab("layers");
+  // One complete native slice supplies both time and Layers. Debounce changes and discard stale work.
+  useEffect(() => {
+    setPreview(null);
+    if (!file || !profile || !modelReady || !fits || orienting || disabled) {
+      setCalculating(false);
       return;
     }
-    if (!file || !profile || busy || disabled) return;
     const currentRevision = ++revision.current;
-    client.current ??= createPreviewClient<File>({
-      manifestUrl: new URL(
-        "/preview-engine/manifest.json",
-        window.location.origin,
-      ).href,
-      workerFactory: () =>
-        new Worker(new URL("../workers/support.worker.ts", import.meta.url), {
-          type: "module",
-        }),
-    });
-    setFaceMode(false);
-    setOperation("Preparing preview…");
-    setTab("layers");
-    setBusy(true);
-    setMessage("");
-    try {
-      const result = await client.current.generate({
-        input: file,
-        profile,
-        view: "print",
-        support:
-          supports === "none"
-            ? "none"
-            : supports === "normal"
-              ? "normal"
-              : "tree",
-        mirrorX: mirror,
-        rotation,
-        fitBed: true,
-        infill,
-        layerHeight,
-      });
-      if (revision.current !== currentRevision) return;
-      setPreview(result);
-      setLayerIndex(result.layers.length - 1);
-      setOnlyLayer(false);
-      setProgress(100);
-      setHidden([]);
-    } catch (error) {
-      if (revision.current !== currentRevision) return;
-      const code = (error as { code?: string }).code;
-      setTab("model");
-      setMessage(
-        code === "canceled"
-          ? "Preview canceled."
-          : code === "mesh_limit" || code === "segment_limit"
-            ? "This model is too detailed to preview."
-            : code === "timeout"
-              ? "Preview took too long. Try again."
-              : code === "out_of_memory"
-                ? "The browser ran out of slicing memory. Close other tabs and retry."
-                : error instanceof Error
-                  ? error.message.slice(0, 200)
-                  : "Couldn't prepare this preview.",
-      );
-    } finally {
-      if (revision.current === currentRevision) setBusy(false);
-    }
-  }
+    let active = true;
+    setCalculating(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        client.current ??= makeClient();
+        const result = await client.current.generate({
+          input: file,
+          profile: profileForPreviewBed(profile, printer),
+          view: "print",
+          support:
+            supports === "none"
+              ? "none"
+              : supports === "normal"
+                ? "normal"
+                : "tree",
+          mirrorX: mirror,
+          rotation,
+          infill,
+          layerHeight,
+        });
+        if (!active || revision.current !== currentRevision) return;
+        setPreview(result);
+        setLayerIndex(result.layers.length - 1);
+        setOnlyLayer(false);
+        setHidden([]);
+      } catch (error) {
+        if (!active || revision.current !== currentRevision) return;
+        const code = (error as { code?: string }).code;
+        setMessage(
+          code === "timeout"
+            ? "Print-time calculation took too long. Try again."
+            : code === "out_of_memory"
+              ? "The browser ran out of slicing memory. Close other tabs and retry."
+              : error instanceof Error
+                ? error.message.slice(0, 200)
+                : "Couldn't calculate this print.",
+        );
+      } finally {
+        if (active && revision.current === currentRevision)
+          setCalculating(false);
+      }
+    }, 350);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      client.current?.cancel();
+    };
+  }, [
+    file,
+    profile,
+    modelReady,
+    printer,
+    fits,
+    mirror,
+    rotation,
+    infill,
+    layerHeight,
+    supports,
+    orienting,
+    disabled,
+    retry,
+  ]);
 
   useEffect(() => {
-    setModel(null);
     setReading(Boolean(file));
-    if (!file) return;
+    if (!file) {
+      setModel(null);
+      return;
+    }
     let worker: Worker;
     try {
       worker = new Worker(
@@ -249,7 +297,7 @@ export default function Preview({
     worker.onmessage = ({ data }) => {
       setReading(false);
       if (data.error) setMessage("Couldn't open this preview.");
-      else setModel(data);
+      else setModel({ ...data, file, rotation, mirror });
       worker.terminate();
     };
     worker.onerror = () => {
@@ -314,16 +362,23 @@ export default function Preview({
       ...model.max.map((value, i) => value - model.min[i]),
       0.000001,
     );
-    const grid = new THREE.GridHelper(5, 25, "#a5afb6", "#6e7b84");
-    grid.position.y = -(model.max[2] - model.min[2]) / extent - 0.02;
-    scene.add(grid);
+    const { x: bedWidth, y: bedDepth } = printer.buildVolume;
+    const grid = new THREE.GridHelper(
+      bedWidth,
+      Math.max(1, Math.round(bedWidth / 10)),
+      "#a5afb6",
+      "#6e7b84",
+    );
+    grid.rotation.x = Math.PI / 2;
+    grid.scale.z = bedDepth / bedWidth;
+    grid.position.z = -0.02;
+    root.add(grid);
     const bed = new THREE.Mesh(
-      new THREE.PlaneGeometry(5, 5),
+      new THREE.PlaneGeometry(bedWidth, bedDepth),
       new THREE.MeshStandardMaterial({ color: "#48545c", roughness: 1 }),
     );
-    bed.rotation.x = -Math.PI / 2;
-    bed.position.y = grid.position.y - 0.003;
-    scene.add(bed);
+    bed.position.z = -0.05;
+    root.add(bed);
     let hull: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null =
       null;
     let highlight: THREE.Mesh<
@@ -517,7 +572,7 @@ export default function Preview({
       renderer.forceContextLoss();
       renderer.domElement.remove();
     };
-  }, [model]);
+  }, [model, printer]);
 
   useEffect(() => {
     const mesh = meshRef.current;
@@ -529,7 +584,7 @@ export default function Preview({
   useEffect(() => {
     overlayRef.current?.dispose();
     overlayRef.current = null;
-    if (!preview || !frameRef.current || !model) return;
+    if (!preview || tab !== "layers" || !frameRef.current || !model) return;
     const center = model.min.map((value, i) => (value + model.max[i]) / 2);
     frameRef.current.position.set(
       center[0] - (preview.bounds.min[0] + preview.bounds.max[0]) / 2,
@@ -543,7 +598,7 @@ export default function Preview({
       overlay.dispose();
       if (overlayRef.current === overlay) overlayRef.current = null;
     };
-  }, [preview, model]);
+  }, [preview, model, tab]);
 
   useEffect(() => {
     const layered = tab === "layers" && Boolean(preview);
@@ -557,43 +612,31 @@ export default function Preview({
     const layer = preview?.layers[layerIndex];
     if (layer) {
       overlay.setLayerRange(-Infinity, layer.printZ + 0.000001);
-      const start = layer.startSegment ?? 0,
-        end = layer.endSegment ?? preview!.segmentCount;
       overlay.setMoveRange(
-        onlyLayer ? start : 0,
-        Math.ceil(start + ((end - start) * progress) / 100),
+        onlyLayer ? layer.startSegment : 0,
+        layer.endSegment,
       );
     }
     for (const feature of preview?.features ?? [])
       overlay.setFeatureVisible(feature.id, !hidden.includes(feature.category));
     render.current();
-  }, [preview, model, tab, layerIndex, onlyLayer, progress, hidden]);
-
-  useEffect(() => {
-    if (!playing || tab !== "layers") return;
-    const from = progress >= 100 ? 0 : progress,
-      started = performance.now();
-    let animation = 0;
-    const step = () => {
-      const value = Math.min(100, from + (performance.now() - started) / 40);
-      setProgress(value);
-      if (value === 100) setPlaying(false);
-      else animation = requestAnimationFrame(step);
-    };
-    animation = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(animation);
-  }, [playing, tab]);
+  }, [preview, model, tab, layerIndex, onlyLayer, hidden]);
 
   const layered = tab === "layers" && Boolean(preview);
   const dimensions = model?.min
     .map((value, i) => Number((model.max[i] - value).toFixed(1)))
     .join(" × ");
-  const seconds = preview?.time?.estimatedSeconds;
-  const time = seconds
-    ? seconds < 60
-      ? "Under 1 min"
-      : `About ${Math.round(seconds / 60)} min`
-    : "";
+  const seconds = model ? preview?.time?.estimatedSeconds : undefined;
+  const time =
+    seconds !== undefined
+      ? formatPrintTime(seconds)
+      : orienting
+        ? "Waiting for orientation…"
+        : !fits
+          ? "Unavailable"
+          : calculating || reading || profileLoading
+            ? "Calculating…"
+            : "Unavailable";
   return (
     <div className="preview-panel print-preview">
       <div className="preview-header">
@@ -603,10 +646,7 @@ export default function Preview({
             type="button"
             role="tab"
             aria-selected={tab === "model"}
-            onClick={() => {
-              setTab("model");
-              setPlaying(false);
-            }}
+            onClick={() => setTab("model")}
           >
             Model
           </button>
@@ -615,12 +655,30 @@ export default function Preview({
             role="tab"
             aria-selected={tab === "layers"}
             disabled={!model || !profile || disabled}
-            onClick={showLayers}
+            onClick={() => {
+              setFaceMode(false);
+              setTab("layers");
+            }}
           >
             Layers
           </button>
         </div>
       </div>
+      {file && (
+        <div className="preview-file">
+          <span>Previewing</span>
+          <strong title={file.name}>{file.name}</strong>
+        </div>
+      )}
+      {file && (
+        <div className="print-time" aria-live="polite">
+          <span>Print time:</span>
+          <strong>{time}</strong>
+          {copies > 1 && (
+            <span className="small muted">per copy · {copies} copies</span>
+          )}
+        </div>
+      )}
       {file && (
         <div
           className="orientation-toolbar"
@@ -630,14 +688,14 @@ export default function Preview({
           <span>Orientation</span>
           <button
             type="button"
-            disabled={busy || disabled || !model}
+            disabled={orienting || disabled || !model}
             onClick={autoOrient}
           >
             Auto
           </button>
           <button
             type="button"
-            disabled={busy || disabled || reading}
+            disabled={orienting || disabled || reading}
             aria-pressed={faceMode}
             onClick={() => {
               setFaceMode(!faceMode);
@@ -648,7 +706,7 @@ export default function Preview({
           </button>
           <button
             type="button"
-            disabled={busy || disabled}
+            disabled={orienting || disabled}
             onClick={() => {
               setFaceMode(false);
               onRotationChange([...IDENTITY_ROTATION]);
@@ -734,13 +792,13 @@ export default function Preview({
                 ))}
             </div>
           )}
-          {busy && (
+          {orienting && (
             <div className="preview-loading" role="status">
-              {operation}{" "}
+              Finding an orientation…{" "}
               <button
                 type="button"
                 className="text-button"
-                onClick={() => client.current?.cancel()}
+                onClick={() => orientationClient.current?.cancel()}
               >
                 Cancel
               </button>
@@ -758,8 +816,6 @@ export default function Preview({
               value={layerIndex + 1}
               onChange={(event) => {
                 setLayerIndex(Number(event.target.value) - 1);
-                setPlaying(false);
-                setProgress(100);
               }}
             />
             <span>1</span>
@@ -792,38 +848,14 @@ export default function Preview({
               Only this layer
             </label>
           </div>
-          <div className="move-controls">
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setPlaying(!playing)}
-            >
-              {playing ? "Pause" : "Play"}
-            </button>
-            <input
-              type="range"
-              aria-label="Layer progress"
-              min="0"
-              max="100"
-              step="1"
-              value={Math.round(progress)}
-              onChange={(event) => {
-                setPlaying(false);
-                setProgress(Number(event.target.value));
-              }}
-            />
-          </div>
         </div>
       )}
       {model && (
         <div className="printer-fit-info">
           <span className="fit-label">Printer fit</span>
           <div className="fit-badges">
-            {AVAILABLE_PRINTERS.map((printer) => {
-              const fits =
-                model.max[0] - model.min[0] <= printer.buildVolume.x &&
-                model.max[1] - model.min[1] <= printer.buildVolume.y &&
-                model.max[2] - model.min[2] <= printer.buildVolume.z;
+            {PREVIEW_PRINTERS.map((printer) => {
+              const fits = fitsPreviewPrinter(modelDimensions, printer);
               return (
                 <span
                   key={printer.id}
@@ -836,27 +868,44 @@ export default function Preview({
           </div>
         </div>
       )}
+      {model && (
+        <p className="preview-bed">
+          Bed: <strong>{printer.name}</strong> · {printer.buildVolume.x} ×{" "}
+          {printer.buildVolume.y} mm
+          {!fits && (
+            <span>
+              {" "}
+              · Too large for this bed. Rotate the part or choose a smaller
+              model.
+            </span>
+          )}
+        </p>
+      )}
+      {tab === "layers" && calculating && (
+        <p className="small" role="status">
+          Preparing layers…
+        </p>
+      )}
       {message && (
         <p className="small preview-message" role="status">
-          {message}
+          {message}{" "}
+          {profile && !calculating && !orienting && fits && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => {
+                setMessage("");
+                setRetry((value) => value + 1);
+              }}
+            >
+              Try again
+            </button>
+          )}
         </p>
       )}
       <div className="preview-summary">
         <span>{dimensions && `${dimensions} mm`}</span>
-        {time && <strong>{time}</strong>}
       </div>
-      {profile && (
-        <details className="preview-settings">
-          <summary>Preview settings</summary>
-          <p>
-            {profile.label}. The preview bed expands to fit the model. Final
-            settings may differ.
-          </p>
-          {supports === "operator" && (
-            <p>Tree supports are shown as an example.</p>
-          )}
-        </details>
-      )}
     </div>
   );
 }

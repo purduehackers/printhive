@@ -85,9 +85,9 @@ describe('batch submission flow', () => {
       infill: 30,
       color: 'red',
       items: [
-        { original_filename: 'housing.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'housing.stl', file_size: Buffer.byteLength(asciiSTL), copies: 2 },
         { original_filename: 'pinion.stl', file_size: Buffer.byteLength(asciiSTL) },
-        { original_filename: 'cover.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'cover.stl', file_size: Buffer.byteLength(asciiSTL), copies: 3 },
       ],
     });
 
@@ -132,6 +132,7 @@ describe('batch submission flow', () => {
       'Gearbox Assembly · cover',
     ]);
     expect(queue.every(j => j.color === 'red' && j.infill === 30)).toBe(true);
+    expect(queue.map(j => j.copies)).toEqual([2, 1, 3]);
 
     // Confirming again is idempotent
     const repeat = await confirmation(token, true);

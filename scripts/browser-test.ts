@@ -19,6 +19,10 @@ try {
   });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  let nativeLoads = 0;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/preview-engine/manifest.json')) nativeLoads++;
+  });
   await page.goto(h.origin);
   await expect(
     page.getByRole('heading', { name: 'HIVE 3d printing', exact: true }),
@@ -49,22 +53,38 @@ try {
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await expect(page.locator('.preview-viewport canvas')).toBeVisible();
   await page.getByRole('radio', { name: 'yellow' }).check();
-  await page.getByLabel('Mirror the part').check();
+  await page.getByLabel('Mirror along the X axis').check();
+  await page.getByLabel('Number of copies').selectOption('2');
   const previewUploads: string[] = [];
   const trackPreviewUpload = (request: import('@playwright/test').Request) => {
     if (request.method() === 'POST' || request.method() === 'PUT')
       previewUploads.push(request.url());
   };
   page.on('request', trackPreviewUpload);
+  await expect(
+    page.getByRole('tab', { name: 'Model', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.preview-file')).toContainText('bracket.stl');
+  await expect(page.locator('.print-time')).toContainText('Print time:');
+  await expect(page.locator('.print-time strong')).toHaveText(/About|Under/, {
+    timeout: 45000,
+  });
+  await expect(page.locator('.print-time')).toContainText('per copy');
+  await expect(page.locator('.preview-bed')).toContainText('Prusa Core ONE+');
+  const completedLoads = nativeLoads;
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/background-print-time.png' });
   await page.getByRole('tab', { name: 'Layers', exact: true }).click();
   await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
+  expect(nativeLoads).toBe(completedLoads);
   const canvas = await page.locator('.preview-viewport canvas').elementHandle();
   await expect(
     page.getByRole('combobox', { name: 'Supports', exact: true }),
   ).toHaveValue('operator');
-  await expect(page.getByText(/About \d+ min/)).toBeVisible();
+  await expect(page.locator('.print-time strong')).toHaveText(/About|Under/);
   await expect(
     page.getByRole('button', { name: 'Walls', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
@@ -88,20 +108,15 @@ try {
   await page.getByRole('slider', { name: 'Layer', exact: true }).press('Home');
   await expect(page.getByText(/Layer 1 \/ \d+/)).toBeVisible();
   await page.getByLabel('Only this layer').check();
-  await page
-    .getByRole('slider', { name: 'Layer progress', exact: true })
-    .press('Home');
   await expect(
     page.getByRole('slider', { name: 'Layer progress', exact: true }),
-  ).toHaveValue('0');
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  ).toHaveCount(0);
   await expect(
-    page.getByRole('button', { name: 'Pause', exact: true }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  await page
-    .getByRole('slider', { name: 'Layer progress', exact: true })
-    .press('End');
+    page.getByRole('button', { name: /^(Play|Pause)$/ }),
+  ).toHaveCount(0);
+  await expect(page.getByText('Preview settings', { exact: true })).toHaveCount(
+    0,
+  );
   await page.getByLabel('Only this layer').uncheck();
   await page.getByRole('slider', { name: 'Layer', exact: true }).press('End');
   await page.getByRole('button', { name: 'Walls', exact: true }).click();
@@ -151,8 +166,6 @@ try {
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('operator');
   await page.getByRole('tab', { name: 'Layers', exact: true }).click();
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByText('Preview canceled.')).toBeVisible();
   await page.getByRole('button', { name: 'Auto', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Auto', exact: true }),
@@ -193,6 +206,7 @@ try {
     .selectOption('normal');
   const uploadedIds: string[] = [];
   let submittedMetadata: Record<string, unknown> = {};
+  let submittedBatch: { items: { copies: number }[] } = { items: [] };
   page.on('request', (request) => {
     if (
       request.method() === 'PUT' &&
@@ -204,6 +218,11 @@ try {
       request.url().endsWith('/api/submissions')
     )
       submittedMetadata = request.postDataJSON();
+    if (
+      request.method() === 'POST' &&
+      request.url().endsWith('/api/submissions/batch')
+    )
+      submittedBatch = request.postDataJSON();
   });
   await page.getByLabel('Purdue email').fill('browser@purdue.edu');
   await page.screenshot({
@@ -219,6 +238,7 @@ try {
   );
   expect(submittedMetadata).toMatchObject({
     mirror: 0,
+    copies: 2,
     supports: 'normal',
     file_size: uploadedSTL.byteLength,
   });
@@ -269,21 +289,40 @@ try {
     page.getByRole('button', { name: 'Remove wheel_right.stl', exact: true }),
   ).toBeVisible();
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await page.getByLabel('Number of copies').selectOption('2');
+  await page.getByLabel('Mirror along the X axis').check();
   await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
   await page.getByRole('button', { name: 'Front', exact: true }).click();
   await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
   await page.getByRole('button', { name: /^wheel_right\.stl/ }).click();
+  await expect(page.locator('.preview-file')).toContainText('wheel_right.stl');
+  await expect(page.getByLabel('Number of copies')).toHaveValue('1');
+  await expect(page.getByLabel('Mirror along the X axis')).not.toBeChecked();
+  await page.getByLabel('Number of copies').selectOption('3');
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await page.getByRole('button', { name: /^wheel_left\.stl/ }).click();
+  await expect(page.getByLabel('Number of copies')).toHaveValue('2');
+  await expect(page.getByLabel('Mirror along the X axis')).toBeChecked();
+  await expect(page.locator('.preview-file')).toContainText('wheel_left.stl');
+  await page.screenshot({
+    path: 'test-results/per-file-options.png',
+    fullPage: true,
+  });
   await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
   await page.getByLabel('Purdue email').fill('browser@purdue.edu');
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
   await expect(
     page.getByRole('heading', { name: 'Check your email' }),
   ).toBeVisible();
+  expect(submittedBatch.items.map((item) => item.copies)).toEqual([2, 3]);
+  let firstTriangle: number[] = [];
   const batchLeft = await parseSTL(
     new Blob([await readFile(join(h.dir, 'files', uploadedIds[1] + '.stl'))]),
+    (vertices, index) => {
+      if (index === 0) firstTriangle = vertices;
+    },
   );
+  expect(firstTriangle).toEqual([15, 12, 0, 9, 12, 0, 9, 12, 10]);
   expect(batchLeft.max.map((value, i) => value - batchLeft.min[i])).toEqual([
     30, 24, 10,
   ]);
@@ -563,6 +602,10 @@ try {
     ),
   });
   await expect(httpPage.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await expect(httpPage.locator('.print-time strong')).toHaveText(
+    /About|Under/,
+    { timeout: 45000 },
+  );
   await httpPage.getByRole('tab', { name: 'Layers', exact: true }).click();
   await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
@@ -576,6 +619,59 @@ try {
   await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
+  const bracketText = await readFile(
+    new URL('../tests/support-bracket.stl', import.meta.url),
+    'utf8',
+  );
+  const scaled = (scale: number) =>
+    Buffer.from(
+      bracketText.replace(
+        /vertex ([-\d.]+) ([-\d.]+) ([-\d.]+)/g,
+        (_, x, y, z) =>
+          `vertex ${(Number(x) - 10) * scale} ${Number(y) + 5} ${(Number(z) - 7) / 8}`,
+      ),
+    );
+  await httpPage
+    .getByRole('button', { name: 'Reset orientation', exact: true })
+    .click();
+  await httpPage
+    .getByLabel('STL file', { exact: true })
+    .setInputFiles({
+      name: 'large-bed.stl',
+      mimeType: 'application/octet-stream',
+      buffer: scaled(10),
+    });
+  await httpPage.getByRole('button', { name: /^large-bed\.stl/ }).click();
+  await expect(httpPage.locator('.preview-bed')).toContainText('Bambu H2D');
+  await expect(httpPage.locator('.preview-bed')).toContainText(
+    '325 \u00d7 320 mm',
+  );
+  await expect(httpPage.locator('.print-time strong')).toHaveText(
+    /About|Under/,
+    { timeout: 45000 },
+  );
+  await httpPage
+    .getByLabel('STL file', { exact: true })
+    .setInputFiles({
+      name: 'too-large.stl',
+      mimeType: 'application/octet-stream',
+      buffer: scaled(11),
+    });
+  await httpPage.getByRole('button', { name: /^too-large\.stl/ }).click();
+  await expect(httpPage.locator('.preview-bed')).toContainText(
+    'Too large for this bed',
+  );
+  await expect(httpPage.locator('.print-time strong')).toHaveText(
+    'Unavailable',
+  );
+  await httpPage.getByRole('button', { name: /^http-bracket\.stl/ }).click();
+  await expect(httpPage.locator('.preview-bed')).toContainText(
+    'Prusa Core ONE+',
+  );
+  await expect(httpPage.locator('.print-time strong')).toHaveText(
+    /About|Under/,
+    { timeout: 45000 },
+  );
   await httpPage.route('**/preview-engine/manifest.json', (route) =>
     route.fulfill({ status: 503, body: 'Unavailable' }),
   );

@@ -12,6 +12,11 @@ import {
 import { IDENTITY_ROTATION } from '@time-estimator/browser-preview/pose';
 import { prepareOrientedFile } from '../lib/oriented-file';
 const DEFAULT_ROTATION = [...IDENTITY_ROTATION];
+interface FileOptions {
+  copies: number;
+  mirror: boolean;
+}
+const DEFAULT_FILE_OPTIONS: FileOptions = { copies: 1, mirror: false };
 const Preview = lazy(() => import('./Preview'));
 
 const DEFAULT_MATERIALS: Material[] = [
@@ -44,7 +49,9 @@ export default function SubmissionForm({
   const [preparing, setPreparing] = useState(false);
   const [material, setMaterial] = useState(materials[0].name);
   const [color, setColor] = useState(materials[0].colors[0]?.name ?? 'black');
-  const [mirror, setMirror] = useState(false);
+  const [fileOptions, setFileOptions] = useState<Map<File, FileOptions>>(
+    () => new Map(),
+  );
   const [infill, setInfill] = useState(15),
     [layerHeight, setLayerHeight] = useState(0.2),
     [supports, setSupports] = useState('operator');
@@ -64,6 +71,19 @@ export default function SubmissionForm({
   const activeRotation = activeFile
     ? (orientations.get(activeFile) ?? DEFAULT_ROTATION)
     : DEFAULT_ROTATION;
+  const activeOptions = activeFile
+    ? (fileOptions.get(activeFile) ?? DEFAULT_FILE_OPTIONS)
+    : DEFAULT_FILE_OPTIONS;
+  const { copies, mirror } = activeOptions;
+  function updateFileOptions(change: Partial<FileOptions>) {
+    if (activeFile)
+      setFileOptions((current) =>
+        new Map(current).set(activeFile, {
+          ...(current.get(activeFile) ?? DEFAULT_FILE_OPTIONS),
+          ...change,
+        }),
+      );
+  }
 
   function handleMaterialChange(nextName: string) {
     setMaterial(nextName);
@@ -111,6 +131,10 @@ export default function SubmissionForm({
       (current) =>
         new Map([...current].filter(([file]) => merged.includes(file))),
     );
+    setFileOptions(
+      (current) =>
+        new Map([...current].filter(([file]) => merged.includes(file))),
+    );
     setFiles(merged);
     if (files.length === 0) setActiveIndex(0);
     setMessage('');
@@ -123,8 +147,13 @@ export default function SubmissionForm({
       (current) =>
         new Map([...current].filter(([file]) => next.includes(file))),
     );
+    setFileOptions(
+      (current) =>
+        new Map([...current].filter(([file]) => next.includes(file))),
+    );
     setFiles(next);
-    if (activeIndex >= next.length) {
+    if (index < activeIndex) setActiveIndex(activeIndex - 1);
+    else if (activeIndex >= next.length) {
       setActiveIndex(Math.max(0, next.length - 1));
     }
   }
@@ -197,7 +226,7 @@ export default function SubmissionForm({
           await prepareOrientedFile(
             file,
             orientations.get(file),
-            mirror,
+            fileOptions.get(file)?.mirror ?? false,
             controller.signal,
           ),
         );
@@ -222,7 +251,7 @@ export default function SubmissionForm({
             color,
             layer_height: Number(fields.get('layer_height')),
             supports: fields.get('supports'),
-            copies: Number(fields.get('copies')),
+            copies: fileOptions.get(files[0])?.copies ?? 1,
             mirror: 0,
           }),
         });
@@ -252,11 +281,11 @@ export default function SubmissionForm({
             color,
             layer_height: Number(fields.get('layer_height')),
             supports: fields.get('supports'),
-            copies: Number(fields.get('copies')),
             mirror: 0,
-            items: uploadFiles.map((f) => ({
+            items: uploadFiles.map((f, index) => ({
               original_filename: f.name,
               file_size: f.size,
+              copies: fileOptions.get(files[index])?.copies ?? 1,
             })),
           }),
         });
@@ -382,6 +411,7 @@ export default function SubmissionForm({
                     onClick={() => {
                       setFiles([]);
                       setOrientations(new Map());
+                      setFileOptions(new Map());
                       setActiveIndex(0);
                     }}
                   >
@@ -401,7 +431,17 @@ export default function SubmissionForm({
                       onClick={() => setActiveIndex(i)}
                       aria-pressed={i === activeIndex}
                     >
-                      <span className="batch-file-name">{f.name}</span>
+                      <span className="batch-file-details">
+                        <span className="batch-file-name">{f.name}</span>
+                        <span className="batch-file-options-summary">
+                          {fileOptions.get(f)?.copies ?? 1}{' '}
+                          {(fileOptions.get(f)?.copies ?? 1) === 1
+                            ? 'copy'
+                            : 'copies'}
+                          {fileOptions.get(f)?.mirror && ' · Mirrored'}
+                          {i === activeIndex && ' · Previewing'}
+                        </span>
+                      </span>
                       <span className="batch-file-size mono">
                         {(f.size / 1024 ** 2).toFixed(2)} MiB
                       </span>
@@ -419,6 +459,44 @@ export default function SubmissionForm({
               </ul>
             </div>
           )}
+          {activeFile && (
+            <fieldset
+              className="file-options"
+              aria-label="Selected file options"
+            >
+              <legend>
+                Options for <strong>{activeFile.name}</strong>
+              </legend>
+              <div className="file-options-controls">
+                <label>
+                  Number of copies
+                  <select
+                    name="copies"
+                    value={copies}
+                    onChange={(event) =>
+                      updateFileOptions({ copies: Number(event.target.value) })
+                    }
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <option key={value} value={value}>
+                        {value} {value === 1 ? 'copy' : 'copies'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={mirror}
+                    onChange={(event) =>
+                      updateFileOptions({ mirror: event.target.checked })
+                    }
+                  />
+                  <span>Mirror along the X axis</span>
+                </label>
+              </div>
+            </fieldset>
+          )}
           <label>
             Notes for the operator <span className="optional">Optional</span>
             <textarea
@@ -431,6 +509,9 @@ export default function SubmissionForm({
         </fieldset>
         <fieldset disabled={busy} className="form-section">
           <legend>Print settings</legend>
+          {files.length > 1 && (
+            <p className="small muted">These settings apply to all files.</p>
+          )}
           <div className="field-grid">
             <label>
               Material
@@ -488,16 +569,6 @@ export default function SubmissionForm({
                 ))}
               </select>
             </label>
-            <label>
-              Number of copies
-              <select name="copies" defaultValue="1">
-                {[1, 2, 3, 4, 5].map((v) => (
-                  <option key={v} value={v}>
-                    {v} {v === 1 ? 'copy' : 'copies'}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
           <fieldset className="color-options">
             <legend>Filament color</legend>
@@ -522,14 +593,6 @@ export default function SubmissionForm({
               );
             })}
           </fieldset>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={mirror}
-              onChange={(e) => setMirror(e.target.checked)}
-            />
-            <span>Mirror the part along the X axis</span>
-          </label>
         </fieldset>
         <fieldset disabled={busy} className="form-section">
           <legend>Contact</legend>
@@ -611,6 +674,7 @@ export default function SubmissionForm({
               )?.code,
             )}
             mirror={mirror}
+            copies={copies}
             infill={infill}
             layerHeight={layerHeight}
             supports={supports}
