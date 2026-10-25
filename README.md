@@ -106,10 +106,10 @@ Database, file storage, mail, and token operations are separated in `src/lib/ser
 
 API/library references: [Astro Node adapter](https://docs.astro.build/en/guides/integrations-guide/node/) and [Bun SQL](https://bun.sh/docs/runtime/sql).
 
-## Browser support preview package
+## Browser print preview package
 
 The reusable source is maintained separately in the sibling time_estimator repository's browser directory. PrintHive consumes the local source archive under vendor; it does not copy or maintain the support renderer implementation. The browser package is private and no publication/deployment is implied.
 
 The build runs bun run preview:runtime to provision checksum-pinned public engine assets under public/preview-engine. These assets are ignored and are separate from the package archive and all private uploads. Keep public/preview-profile.json explicit about its printer/process/filament assumptions. Replace the illustrative profile with a resolved production profile before presenting the view as your operator's chosen setup. No database migration is required for this local inspection feature.
 
-The support view is one part, with actual generated tree base/interface paths, opacity and layer controls. Its displayed time is Orca's uncalibrated slicer reference; it is not a physical deadline bound or the separate sampled fast-mode estimator. The existing native/server SDK and its worker client remain independently built and packaged.
+The preview has Model and Layers tabs. Layers shows actual sliced walls, infill, surfaces and generated supports in Orca feature colors. A vertical slider selects the layer; Only this layer, progress/playback and feature toggles let users inspect it. Profile details are collapsed under Preview settings. Playback is illustrative, not physical-speed simulation. The viewer renders on changes rather than continuously while idle. Its displayed time is Orca's uncalibrated slicer reference; it is not a physical deadline bound or the separate sampled fast-mode estimator. The existing native/server SDK and its worker client remain independently built and packaged.

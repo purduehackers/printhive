@@ -27,7 +27,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "three": "^0.186.1",
-    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.1.0.93e73548a785.tgz"
+    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.2.0.43a26a14d302.tgz"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.11",
