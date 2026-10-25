@@ -3,7 +3,7 @@ export const MAX_BATCH_SIZE = 10;
 export const INFILLS = [15, 20, 30, 50] as const;
 export const COLORS = ['black', 'white', 'yellow', 'red'] as const;
 export const LAYERS = [0.12, 0.16, 0.2, 0.28] as const;
-export const SUPPORTS = ['operator', 'none', 'tree'] as const;
+export const SUPPORTS = ['operator', 'none', 'tree', 'normal'] as const;
 export const MAX_FEEDBACK_LENGTH = 5000;
 export const STATUSES = ['queued', 'printing', 'completed', 'canceled', 'failed', 'rejected'] as const;
 export type Status = typeof STATUSES[number];
@@ -87,7 +87,7 @@ export interface Job extends Omit<PublicJob, 'status'> {
   pending_expires_at: number; upload_expires_at: number; created_at: number;
 }
 export const reference = (id: string) => id.slice(0, 8).toUpperCase();
-export const supportLabel = (value: string) => value === 'operator' ? 'Operator decides' : value === 'tree' ? 'Tree' : 'None';
+export const supportLabel = (value: string) => value === 'operator' ? 'Operator decides' : value === 'tree' ? 'Tree' : value === 'normal' ? 'Regular' : 'None';
 
 export interface PrinterSpec {
   id: string;
@@ -144,4 +144,3 @@ export function checkPrinterFit(dimensions: [number, number, number], printer: P
   const bedSorted = [printer.buildVolume.x, printer.buildVolume.y, printer.buildVolume.z].sort((a, b) => a - b);
   return modelSorted[0] <= bedSorted[0] && modelSorted[1] <= bedSorted[1] && modelSorted[2] <= bedSorted[2];
 }
-

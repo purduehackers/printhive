@@ -15,13 +15,13 @@ export async function parseSTL(blob: Blob, triangle?: (vertices: number[], index
   }
   const header = await blob.slice(0, 84).arrayBuffer();
   const count = header.byteLength === 84 ? new DataView(header).getUint32(80, true) : 0;
-  if (count > 0 && 84 + count * 50 === blob.size) {
+  if (count > 0 && 84 + count * 50 <= blob.size) {
     for (let first = 0; first < count; first += 1024) {
       const amount = Math.min(1024, count - first);
       const data = new DataView(await blob.slice(84 + first * 50, 84 + (first + amount) * 50).arrayBuffer());
       for (let i = 0; i < amount; i++) {
         const offset = i * 50;
-        for (let j = 0; j < 3; j++) if (!Number.isFinite(data.getFloat32(offset + j * 4, true))) fail();
+        // STL normals are advisory. Orca recomputes damaged normals from the finite vertices.
         accept(Array.from({ length: 9 }, (_, j) => data.getFloat32(offset + 12 + j * 4, true)));
       }
     }
@@ -30,19 +30,19 @@ export async function parseSTL(blob: Blob, triangle?: (vertices: number[], index
     let pending = '', state = 0, vertices: number[] = [], opened = false, closed = false;
     const decoder = new TextDecoder('utf-8', { fatal: true });
     const number = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?';
-    const normal = new RegExp(`^facet\\s+normal\\s+(${number})\\s+(${number})\\s+(${number})$`, 'i');
+    const normal = /^facet\s+normal\s+\S+\s+\S+\s+\S+$/i;
     const vertex = new RegExp(`^vertex\\s+(${number})\\s+(${number})\\s+(${number})$`, 'i');
     function line(raw: string) {
       const s = raw.trim();
       if (!s) return;
-      if (s.length > 4096 || /[^\x09\x20-\x7e]/.test(s)) fail();
+      if (s.length > 4096 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(s)) fail();
       if (state === 0) {
         if (!/^solid(?:\s.*)?$/i.test(s)) fail();
         opened = true; closed = false; state = 1;
       } else if (state === 1) {
         if (/^endsolid(?:\s.*)?$/i.test(s)) { closed = true; state = 0; return; }
         const match = normal.exec(s);
-        if (!match || !match.slice(1).every(n => Number.isFinite(Number(n)))) fail();
+        if (!match) fail();
         state = 2;
       } else if (state === 2) {
         if (!/^outer\s+loop$/i.test(s)) fail();

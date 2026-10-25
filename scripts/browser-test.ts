@@ -1,204 +1,551 @@
-import { asciiSTL } from '../tests/fixtures';
+import { parseSTL } from '../src/lib/stl';
 import { chromium, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { startHarness } from '../tests/harness';
+import { join } from 'node:path';
 
 const h = await startHarness();
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
   browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 1000 },
+  });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(h.origin);
-  await expect(page.getByRole('heading', { name: 'HIVE 3d printing', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'HIVE 3d printing', exact: true }),
+  ).toBeVisible();
   const firstPrinterDetails = page.locator('.printer-details').first();
   await expect(firstPrinterDetails).not.toHaveAttribute('open', '');
   await page.getByText('Description & capabilities').first().click();
   await expect(firstPrinterDetails).toHaveAttribute('open', '');
-  await expect(page.getByText('Large-format dual-nozzle system ideal for multi-material prints')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Large-format dual-nozzle system ideal for multi-material prints',
+    ),
+  ).toBeVisible();
   await mkdir('test-results', { recursive: true });
-  await page.screenshot({ path: 'test-results/queue-desktop.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/queue-desktop.png',
+    fullPage: true,
+  });
   await page.goto(h.origin + '/submit');
   await page.getByLabel('Project / part title').fill('Browser test bracket');
-  await page.getByLabel('STL file', { exact: true }).setInputFiles({ name: 'bracket.stl', mimeType: 'application/octet-stream', buffer: await readFile(new URL('../tests/support-bracket.stl', import.meta.url)) });
+  await page.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'bracket.stl',
+    mimeType: 'application/octet-stream',
+    buffer: await readFile(
+      new URL('../tests/support-bracket.stl', import.meta.url),
+    ),
+  });
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await expect(page.locator('.preview-viewport canvas')).toBeVisible();
   await page.getByRole('radio', { name: 'yellow' }).check();
   await page.getByLabel('Mirror the part').check();
-  const canvas = await page.locator('.preview-viewport canvas').elementHandle();
   const previewUploads: string[] = [];
-  const trackPreviewUpload = (request: import('@playwright/test').Request) => { if (request.method() === 'POST' || request.method() === 'PUT') previewUploads.push(request.url()); };
+  const trackPreviewUpload = (request: import('@playwright/test').Request) => {
+    if (request.method() === 'POST' || request.method() === 'PUT')
+      previewUploads.push(request.url());
+  };
   page.on('request', trackPreviewUpload);
   await page.getByRole('tab', { name: 'Layers', exact: true }).click();
-  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({ timeout: 45000 });
-  await expect(page.getByRole('combobox', { name: 'Supports', exact: true })).toHaveValue('operator');
+  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  const canvas = await page.locator('.preview-viewport canvas').elementHandle();
+  await expect(
+    page.getByRole('combobox', { name: 'Supports', exact: true }),
+  ).toHaveValue('operator');
   await expect(page.getByText(/About \d+ min/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Walls', exact: true })).toHaveAttribute('aria-pressed','true');
-  await expect(page.getByRole('button', { name: 'Supports', exact: true })).toBeVisible();
-  await expect(page.getByText(/triangles|physically calibrated|Model opacity/)).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Walls', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    page.getByRole('button', { name: 'Supports', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/triangles|physically calibrated|Model opacity/),
+  ).toHaveCount(0);
   await expect(page.locator('.preview-viewport canvas')).toHaveCount(1);
-  expect(await canvas?.evaluate(element => element.isConnected)).toBe(true);
+  expect(await canvas?.evaluate((element) => element.isConnected)).toBe(true);
   expect(previewUploads).toEqual([]);
   page.off('request', trackPreviewUpload);
-  await page.screenshot({ path: 'test-results/gcode-preview.png', fullPage: true });
-  await page.locator('.preview-panel').screenshot({ path: 'test-results/gcode-preview-panel.png' });
-  await page.getByRole('slider', { name:'Layer', exact:true }).press('Home');
+  await page.screenshot({
+    path: 'test-results/gcode-preview.png',
+    fullPage: true,
+  });
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/gcode-preview-panel.png' });
+  await page.getByRole('slider', { name: 'Layer', exact: true }).press('Home');
   await expect(page.getByText(/Layer 1 \/ \d+/)).toBeVisible();
   await page.getByLabel('Only this layer').check();
-  await page.getByRole('slider', { name:'Layer progress', exact:true }).press('Home');
-  await expect(page.getByRole('slider', { name:'Layer progress', exact:true })).toHaveValue('0');
-  await page.getByRole('button', {name:'Play',exact:true}).click();
-  await expect(page.getByRole('button', {name:'Pause',exact:true})).toBeVisible();
-  await page.getByRole('button', {name:'Pause',exact:true}).click();
-  await page.getByRole('slider', { name:'Layer progress', exact:true }).press('End');
+  await page
+    .getByRole('slider', { name: 'Layer progress', exact: true })
+    .press('Home');
+  await expect(
+    page.getByRole('slider', { name: 'Layer progress', exact: true }),
+  ).toHaveValue('0');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Pause', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page
+    .getByRole('slider', { name: 'Layer progress', exact: true })
+    .press('End');
   await page.getByLabel('Only this layer').uncheck();
-  await page.getByRole('slider', { name:'Layer', exact:true }).press('End');
-  await page.getByRole('button', {name:'Walls',exact:true}).click();
-  await expect(page.getByRole('button', {name:'Walls',exact:true})).toHaveAttribute('aria-pressed','false');
-  await page.getByRole('tab', {name:'Model',exact:true}).click();
-  await page.getByRole('tab', {name:'Layers',exact:true}).click();
-  expect(await canvas?.evaluate(element=>element.isConnected)).toBe(true);
-  await page.setViewportSize({width:390,height:844});
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  await page.locator('.preview-panel').screenshot({path:'test-results/gcode-preview-mobile.png'});
-  await page.setViewportSize({width:1440,height:1000});
-  await page.getByRole('combobox', { name: 'Supports', exact: true }).selectOption('none');
-  await page.getByRole('tab', {name:'Layers',exact:true}).click();
-  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({timeout:45000});
-  await expect(page.getByRole('button', {name:'Supports',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('button', {name:'Walls',exact:true})).toBeVisible();
-  await page.getByRole('combobox', { name: 'Supports', exact: true }).selectOption('operator');
-  await page.getByRole('tab', { name: 'Layers',exact:true }).click();
+  await page.getByRole('slider', { name: 'Layer', exact: true }).press('End');
+  await page.getByRole('button', { name: 'Walls', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Walls', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('tab', { name: 'Model', exact: true }).click();
+  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  expect(await canvas?.evaluate((element) => element.isConnected)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/gcode-preview-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('normal');
+  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  await expect(
+    page.getByRole('button', { name: 'Supports', exact: true }),
+  ).toBeVisible();
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/regular-supports-panel.png' });
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('none');
+  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  await expect(
+    page.getByRole('button', { name: 'Supports', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Walls', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('operator');
+  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText('Preview canceled.')).toBeVisible();
+  await page.getByRole('button', { name: 'Auto', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Auto', exact: true }),
+  ).toBeEnabled({ timeout: 90000 });
+  await expect(page.getByText('30 × 10 × 24 mm')).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Reset orientation', exact: true })
+    .click();
+  await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Front', exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator('.preview-viewport canvas')).toBeVisible();
+  const viewport = await page.locator('.preview-viewport canvas').boundingBox();
+  await page.mouse.move(
+    viewport!.x + viewport!.width / 2,
+    viewport!.y + viewport!.height / 2,
+  );
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/orientation-faces-panel.png' });
+  await page
+    .locator('.preview-viewport canvas')
+    .click({ position: { x: viewport!.width / 2, y: viewport!.height / 2 } });
+  await expect(
+    page.getByText('Click a highlighted face to place it on the bed.'),
+  ).toHaveCount(0);
+  await page
+    .getByRole('button', { name: 'Reset orientation', exact: true })
+    .click();
+  await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
+  await page.getByRole('button', { name: 'Front', exact: true }).click();
+  await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('normal');
+  const uploadedIds: string[] = [];
+  let submittedMetadata: Record<string, unknown> = {};
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PUT' &&
+      request.url().includes('/api/submissions/')
+    )
+      uploadedIds.push(request.url().match(/submissions\/([^/]+)\/file/)![1]);
+    if (
+      request.method() === 'POST' &&
+      request.url().endsWith('/api/submissions')
+    )
+      submittedMetadata = request.postDataJSON();
+  });
   await page.getByLabel('Purdue email').fill('browser@purdue.edu');
-  await page.screenshot({ path: 'test-results/submit-desktop.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/submit-desktop.png',
+    fullPage: true,
+  });
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Check your email' }),
+  ).toBeVisible();
+  const uploadedSTL = await readFile(
+    join(h.dir, 'files', uploadedIds[0] + '.stl'),
+  );
+  expect(submittedMetadata).toMatchObject({
+    mirror: 0,
+    supports: 'normal',
+    file_size: uploadedSTL.byteLength,
+  });
+  const submittedInfo = await parseSTL(new Blob([uploadedSTL]));
+  expect(submittedInfo.triangles).toBe(24);
+  expect(submittedInfo.min[2]).toBe(0);
+  expect(
+    submittedInfo.max.map((value, i) => value - submittedInfo.min[i]),
+  ).toEqual([30, 24, 10]);
   const link = h.messages[0].match(/http[^\s]+\/confirm\?token=[^\s]+/)![0];
-  await page.goto(link); await expect(page.getByRole('button', { name: 'Confirm print' })).toBeVisible();
+  await page.goto(link);
+  await expect(
+    page.getByRole('button', { name: 'Confirm print' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Confirm print' }).click();
-  await expect(page.getByRole('heading', { name: 'Print queued' })).toBeVisible();
-  await page.goto(h.origin); await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Print queued' }),
+  ).toBeVisible();
+  await page.goto(h.origin);
+  await expect(
+    page.getByRole('heading', { name: 'Browser test bracket' }),
+  ).toBeVisible();
 
   // Test batch submission of multiple STL files
   await page.goto(h.origin + '/submit');
   await page.getByLabel('Project / part title').fill('Batch Rover');
   await page.getByLabel('STL file', { exact: true }).setInputFiles([
-    { name: 'wheel_left.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
-    { name: 'wheel_right.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
+    {
+      name: 'wheel_left.stl',
+      mimeType: 'application/octet-stream',
+      buffer: await readFile(
+        new URL('../tests/support-bracket.stl', import.meta.url),
+      ),
+    },
+    {
+      name: 'wheel_right.stl',
+      mimeType: 'application/octet-stream',
+      buffer: await readFile(
+        new URL('../tests/support-bracket.stl', import.meta.url),
+      ),
+    },
   ]);
   await expect(page.getByText('2 STL files selected')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Remove wheel_left.stl', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Remove wheel_right.stl', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remove wheel_left.stl', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remove wheel_right.stl', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
+  await page.getByRole('button', { name: 'Front', exact: true }).click();
+  await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
+  await page.getByRole('button', { name: /^wheel_right\.stl/ }).click();
+  await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await page.getByRole('button', { name: /^wheel_left\.stl/ }).click();
+  await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
   await page.getByLabel('Purdue email').fill('browser@purdue.edu');
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
-  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
-  const batchLink = h.messages[1].match(/http[^\s]+\/confirm\?token=[^\s]+/)![0];
+  await expect(
+    page.getByRole('heading', { name: 'Check your email' }),
+  ).toBeVisible();
+  const batchLeft = await parseSTL(
+    new Blob([await readFile(join(h.dir, 'files', uploadedIds[1] + '.stl'))]),
+  );
+  expect(batchLeft.max.map((value, i) => value - batchLeft.min[i])).toEqual([
+    30, 24, 10,
+  ]);
+  expect(
+    (await readFile(join(h.dir, 'files', uploadedIds[2] + '.stl'))).equals(
+      await readFile(new URL('../tests/support-bracket.stl', import.meta.url)),
+    ),
+  ).toBe(true);
+  const batchLink = h.messages[1].match(
+    /http[^\s]+\/confirm\?token=[^\s]+/,
+  )![0];
   await page.goto(batchLink);
-  await expect(page.getByRole('button', { name: 'Confirm 2 prints' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Confirm 2 prints' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Confirm 2 prints' }).click();
-  await expect(page.getByRole('heading', { name: 'Prints queued' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Prints queued' }),
+  ).toBeVisible();
   await page.goto(h.origin);
-  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_left' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_right' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Batch Rover · wheel_left' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Batch Rover · wheel_right' }),
+  ).toBeVisible();
   await page.goto(h.origin + '/operator/login');
-  await page.getByLabel('Username').fill('operator'); await page.getByLabel('Password', { exact: true }).fill('test-password-12345');
+  await page.getByLabel('Username').fill('operator');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('test-password-12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Print jobs' })).toBeVisible();
   await page.getByRole('link', { name: 'Manage Browser test bracket' }).click();
   await page.getByRole('button', { name: 'Update status' }).click();
-  await expect(page.getByText('Status saved and notification email accepted for delivery.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Status saved and notification email accepted for delivery.',
+    ),
+  ).toBeVisible();
   await expect(page.getByText('Current status:')).toContainText('printing');
   h.rejectMail(true);
   await page.getByRole('button', { name: 'Update status' }).click();
-  await expect(page.getByText(/Status saved, but the notification email failed/)).toBeVisible();
+  await expect(
+    page.getByText(/Status saved, but the notification email failed/),
+  ).toBeVisible();
   await expect(page.getByText('Current status:')).toContainText('completed');
   h.rejectMail(false);
   await page.getByRole('button', { name: 'Update status' }).click();
   await expect(page.getByText('Current status:')).toContainText('queued');
   await page.getByLabel('New status').selectOption('rejected');
-  const returnButton = page.getByRole('button', { name: 'Reject and return', exact: true });
+  const returnButton = page.getByRole('button', {
+    name: 'Reject and return',
+    exact: true,
+  });
   await expect(returnButton).toBeDisabled();
   await page.getByLabel('Feedback for submitter').fill('  \n  ');
   await expect(returnButton).toBeDisabled();
   const feedback = 'Please thicken the walls.\nKeep <script> as plain text.';
   await page.getByLabel('Feedback for submitter').fill(feedback);
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: 'test-results/return-feedback-mobile.png', fullPage: true });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: 'test-results/return-feedback-mobile.png',
+    fullPage: true,
+  });
   await returnButton.click();
   await expect(page.getByText('Current status:')).toContainText('rejected');
-  await expect(page.getByText('Status saved and notification email accepted for delivery.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Status saved and notification email accepted for delivery.',
+    ),
+  ).toBeVisible();
   await page.getByRole('link', { name: 'Refresh details' }).click();
   await expect(page.locator('.history .operator-notes')).toHaveText(feedback);
-  await page.screenshot({ path: 'test-results/returned-job-mobile.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/returned-job-mobile.png',
+    fullPage: true,
+  });
   await page.goto(h.origin);
-  await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: 'Browser test bracket' }),
+  ).toHaveCount(0);
   await page.goto(h.origin + '/operator?status=rejected');
-  await expect(page.getByRole('link', { name: 'Browser test bracket', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Browser test bracket', exact: true }),
+  ).toBeVisible();
   // Test queue selection, custom grouping, and batch status update
   await page.getByLabel('Select Browser test bracket').check();
-  await expect(page.getByRole('region', { name: 'Group status actions' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Group status actions' }),
+  ).toBeVisible();
   await expect(page.getByText('1 print selected')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Download selected STLs ↓' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Download selected STLs ↓' }),
+  ).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download selected STLs ↓' }).click();
   const downloadedFile = await downloadPromise;
-  expect(downloadedFile.suggestedFilename()).toMatch(/^printhive-[A-F0-9]{8}-bracket\.stl$/);
+  expect(downloadedFile.suggestedFilename()).toMatch(
+    /^printhive-[A-F0-9]{8}-bracket\.stl$/,
+  );
 
   // Test custom group creation
   await page.getByRole('button', { name: 'Group selected' }).click();
   await page.getByPlaceholder('Group name (e.g. Bed 1)').fill('Bed Alpha');
   await page.getByRole('button', { name: 'Save group' }).click();
-  await expect(page.locator('.group-badge', { hasText: 'Bed Alpha' })).toBeVisible();
+  await expect(
+    page.locator('.group-badge', { hasText: 'Bed Alpha' }),
+  ).toBeVisible();
 
   // Test grouping views
   await page.getByLabel('Group by:').selectOption('custom');
-  await expect(page.locator('.group-title-info', { hasText: 'Bed Alpha' })).toBeVisible();
+  await expect(
+    page.locator('.group-title-info', { hasText: 'Bed Alpha' }),
+  ).toBeVisible();
   await page.getByLabel('Group by:').selectOption('material-color');
-  await expect(page.getByRole('button', { name: 'Update group status' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Update group status' }),
+  ).toBeVisible();
 
   // Test batch status update
   await page.getByRole('button', { name: 'Update group status' }).click();
-  await page.getByLabel('New status for selected prints').selectOption('queued');
+  await page
+    .getByLabel('New status for selected prints')
+    .selectOption('queued');
   await page.getByRole('button', { name: /Update status for 1 print/ }).click();
-  await expect(page.getByRole('status')).toContainText('Successfully updated status to "queued"');
+  await expect(page.getByRole('status')).toContainText(
+    'Successfully updated status to "queued"',
+  );
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(h.origin + '/operator');
-  await page.getByRole('link', { name: 'Manage operators', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Manage operators', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Remove operator', exact: true })).toBeDisabled();
+  await page
+    .getByRole('link', { name: 'Manage operators', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Manage operators', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Remove operator', exact: true }),
+  ).toBeDisabled();
   await page.getByLabel('Username', { exact: true }).fill('browser-helper');
-  await page.getByLabel('Password', { exact: true }).fill('browser-helper-password');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('browser-helper-password');
   await page.getByRole('button', { name: 'Add operator', exact: true }).click();
   await expect(page.getByRole('status')).toHaveText('Operator added.');
-  await page.getByRole('button', { name: 'Edit browser-helper', exact: true }).click();
-  await page.getByLabel('Username', { exact: true }).fill('browser-helper-renamed');
-  await page.getByLabel('New password', { exact: true }).fill('browser-helper-new-password');
+  await page
+    .getByRole('button', { name: 'Edit browser-helper', exact: true })
+    .click();
+  await page
+    .getByLabel('Username', { exact: true })
+    .fill('browser-helper-renamed');
+  await page
+    .getByLabel('New password', { exact: true })
+    .fill('browser-helper-new-password');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByRole('status')).toHaveText('Operator updated.');
-  await expect(page.getByRole('button', { name: 'Edit browser-helper-renamed', exact: true })).toBeVisible();
-  await page.screenshot({ path: 'test-results/operators-desktop.png', fullPage: true });
-  page.once('dialog', dialog => dialog.dismiss());
-  await page.getByRole('button', { name: 'Remove browser-helper-renamed', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Edit browser-helper-renamed', exact: true })).toBeVisible();
-  page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'Remove browser-helper-renamed', exact: true }).click();
+  await expect(
+    page.getByRole('button', {
+      name: 'Edit browser-helper-renamed',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: 'test-results/operators-desktop.png',
+    fullPage: true,
+  });
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page
+    .getByRole('button', { name: 'Remove browser-helper-renamed', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', {
+      name: 'Edit browser-helper-renamed',
+      exact: true,
+    }),
+  ).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page
+    .getByRole('button', { name: 'Remove browser-helper-renamed', exact: true })
+    .click();
   await expect(page.getByRole('status')).toHaveText('Operator removed.');
-  await expect(page.getByRole('button', { name: 'Edit browser-helper-renamed', exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      name: 'Edit browser-helper-renamed',
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Remove operator', exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: 'Remove operator', exact: true }),
+  ).toBeDisabled();
+  if (process.env.PREVIEW_SMOKE_MODEL) {
+    await page.goto(h.origin + '/submit');
+    const previewPosts: string[] = [];
+    const track = (request: import('@playwright/test').Request) => {
+      if (['POST', 'PUT'].includes(request.method()))
+        previewPosts.push(request.url());
+    };
+    page.on('request', track);
+    await page
+      .getByLabel('STL file', { exact: true })
+      .setInputFiles(process.env.PREVIEW_SMOKE_MODEL);
+    await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+    await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+      timeout: 300000,
+    });
+    await page
+      .locator('.preview-panel')
+      .screenshot({ path: 'test-results/large-model-preview.png' });
+    for (let i = 0; i < 4; i++)
+      await page
+        .getByRole('slider', { name: 'Layer', exact: true })
+        .press('PageDown');
+    await page
+      .locator('.preview-panel')
+      .screenshot({ path: 'test-results/large-model-cutaway.png' });
+    await page.getByLabel('Only this layer').check();
+    await page
+      .locator('.preview-panel')
+      .screenshot({ path: 'test-results/large-model-layer.png' });
+    expect(previewPosts).toEqual([]);
+    page.off('request', track);
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ['/', '/submit', '/operator']) {
     await page.goto(h.origin + path);
-    const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(el).position !== 'absolute').map(el => `${el.tagName}.${el.className}: ${Math.round(el.getBoundingClientRect().right)}`).slice(0, 15));
-    await page.screenshot({ path: `test-results/mobile-${path.replaceAll('/', '') || 'queue'}.png`, fullPage: true });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path}: ${overflow.join(', ')}`).toBe(true);
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll('body *')]
+        .filter(
+          (el) =>
+            el.getBoundingClientRect().right > innerWidth + 1 &&
+            getComputedStyle(el).position !== 'absolute',
+        )
+        .map(
+          (el) =>
+            `${el.tagName}.${el.className}: ${Math.round(el.getBoundingClientRect().right)}`,
+        )
+        .slice(0, 15),
+    );
+    await page.screenshot({
+      path: `test-results/mobile-${path.replaceAll('/', '') || 'queue'}.png`,
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+      `${path}: ${overflow.join(', ')}`,
+    ).toBe(true);
   }
-  await page.goto(h.origin + '/submit'); await page.screenshot({ path: 'test-results/submit-mobile.png', fullPage: true });
+  await page.goto(h.origin + '/submit');
+  await page.screenshot({
+    path: 'test-results/submit-mobile.png',
+    fullPage: true,
+  });
   expect(errors).toEqual([]);
-  console.log('Browser flow passed: worker/WebGL preview, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.');
-} finally { await browser?.close(); await h.close(); }
+  console.log(
+    'Browser flow passed: worker/WebGL preview, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.',
+  );
+} finally {
+  await browser?.close();
+  await h.close();
+}

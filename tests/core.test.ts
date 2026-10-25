@@ -52,6 +52,16 @@ describe('validation and bounded STL parsing', () => {
   test('ASCII and binary validation agrees on triangles and dimensions', async () => {
     for (const blob of [new Blob([asciiSTL]), new Blob([binarySTL()])]) expect(await parseSTL(blob)).toEqual({ triangles: 1, min: [0, 0, 0], max: [10, 10, 0] });
   });
+  test('binary STL trailer metadata and regular support settings are accepted', async () => {
+    const info=await parseSTL(new Blob([binarySTL(),new Uint8Array([0,1,2,3])]));
+    expect(info.triangles).toBe(1);
+    expect(metadata(submission({supports:'normal'})).supports).toBe('normal');
+  });
+  test('advisory STL normals and Unicode solid names do not reject finite geometry', async () => {
+    const binary=binarySTL();new DataView(binary.buffer).setFloat32(84,NaN,true);
+    expect((await parseSTL(new Blob([binary]))).triangles).toBe(1);
+    expect((await parseSTL(new Blob([asciiSTL.replaceAll('solid test','solid pièce').replace('normal 0 0 1','normal nan bad 0')]))).triangles).toBe(1);
+  });
   test('binary solid headers are accepted, and parser spans multiple blocks', async () => {
     const bytes = binarySTL(2100); bytes.set(new TextEncoder().encode('solid binary STL'));
     const vertices: number[] = [];
