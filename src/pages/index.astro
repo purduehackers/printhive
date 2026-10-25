@@ -2,6 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import Queue from '../components/Queue';
 import { publicQueue } from '../lib/server/jobs';
+import { AVAILABLE_PRINTERS } from '../lib/shared';
+
 const jobs = await publicQueue();
 const cells = [[0, -69.3], [-60, -34.65], [60, -34.65], [0, 0], [-60, 34.65], [60, 34.65], [0, 69.3]];
 const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 -13 22.5 -26 0 -13 -22.5 13 -22.5Z';
@@ -10,7 +12,10 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
   <section class="hero">
     <div>
       <h1>HIVE<br /> <span>3d printing</span></h1>
-      <a class="button primary" href="/submit">Submit a print</a>
+      <div class="hero-actions">
+        <a class="button primary" href="/submit">Submit a print</a>
+        <a class="button secondary" href="#printers">Available printers</a>
+      </div>
     </div>
     <div class="hero-art" aria-hidden="true">
       <svg class="honeycomb" viewBox="0 0 420 320" fill="none" focusable="false">
@@ -32,5 +37,62 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
       </svg>
     </div>
   </section>
+
   <Queue initial={jobs} client:load />
+
+  <section id="printers" class="printers-section" aria-labelledby="printers-heading">
+    <div class="section-heading">
+      <div>
+        <div class="eyebrow">Hardware Fleet</div>
+        <h2 id="printers-heading">Available printers</h2>
+      </div>
+      <span class="small muted">2 active machines in the hive</span>
+    </div>
+    <div class="printers-grid">
+      {AVAILABLE_PRINTERS.map(printer => (
+        <article class="printer-card">
+          <div class="printer-card-header">
+            <div>
+              <span class="manufacturer">{printer.manufacturer}</span>
+              <h3>{printer.name}</h3>
+            </div>
+            <span class="printer-badge online">Available</span>
+          </div>
+          <div class="printer-specs">
+            <div class="spec-item">
+              <span class="spec-label">Build Volume</span>
+              <span class="spec-value mono">{printer.buildVolumeFormatted}</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Kinematics</span>
+              <span class="spec-value">{printer.technology}</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Chamber</span>
+              <span class="spec-value">{printer.chamber}</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-label">Max Hotend Temp</span>
+              <span class="spec-value mono">{printer.maxNozzleTemp}</span>
+            </div>
+          </div>
+          <details class="printer-details">
+            <summary class="printer-details-summary">
+              <span>Description &amp; capabilities</span>
+              <svg class="dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </summary>
+            <div class="printer-details-content">
+              <p class="printer-description">{printer.description}</p>
+              <ul class="printer-features">
+                {printer.features.map(f => (
+                  <li>{f}</li>
+                ))}
+              </ul>
+            </div>
+          </details>
+        </article>
+      ))}
+    </div>
+  </section>
 </Layout>
+

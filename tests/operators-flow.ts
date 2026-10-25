@@ -59,5 +59,45 @@ export async function operatorsFlow(origin: string, cookie: string) {
   assert.equal((await request('/api/operators', 'GET', undefined, cookie)).status, 401);
   const newCookie = await signIn(original.username, 'changed-own-password');
   assert.deepEqual(await (await request('/api/operators', 'GET', undefined, newCookie)).json(), [original]);
-  console.log('Operator management passed: authorization, CSRF, create/edit/remove, session revocation, reactivation, and last-operator protection.');
+
+  // Materials & colours flow
+  assert.equal((await request('/operator/manage-materials', 'GET', undefined, '')).status, 302);
+  assert.equal((await request('/operator/manage-materials', 'GET', undefined, newCookie)).status, 200);
+
+  // Public can view materials
+  const publicMats = await request('/api/materials', 'GET', undefined, '');
+  assert.equal(publicMats.status, 200);
+  const initialMats = await publicMats.json();
+  assert.equal(initialMats.some((m: { name: string }) => m.name === 'PLA'), true);
+
+  // Unauthorized cannot mutate materials
+  assert.equal((await request('/api/materials', 'POST', { name: 'PETG' }, '')).status, 401);
+  assert.equal((await request('/api/materials', 'POST', { name: 'PETG' }, newCookie, 'https://evil.test')).status, 403);
+
+  // Add material
+  const addMatRes = await request('/api/materials', 'POST', { name: 'PETG', colors: [{ name: 'clear', code: '#e2e8f0' }] }, newCookie);
+  assert.equal(addMatRes.status, 201);
+  const { material: petg } = await addMatRes.json();
+  assert.equal(petg.name, 'PETG');
+  assert.equal(petg.colors[0].name, 'clear');
+
+  // Add colour to material
+  const addColRes = await request(`/api/materials/${petg.id}/colors`, 'POST', { name: 'black', code: '#353832' }, newCookie);
+  assert.equal(addColRes.status, 201);
+  const { color: petgBlack } = await addColRes.json();
+  assert.equal(petgBlack.name, 'black');
+
+  // Delete colour
+  const delColRes = await request(`/api/materials/${petg.id}/colors/${petgBlack.id}`, 'DELETE', undefined, newCookie);
+  assert.equal(delColRes.status, 200);
+
+  // Cannot delete last colour
+  const delLastColRes = await request(`/api/materials/${petg.id}/colors/${petg.colors[0].id}`, 'DELETE', undefined, newCookie);
+  assert.equal(delLastColRes.status, 400);
+
+  // Delete material
+  const delMatRes = await request(`/api/materials/${petg.id}`, 'DELETE', undefined, newCookie);
+  assert.equal(delMatRes.status, 200);
+
+  console.log('Operator management passed: authorization, CSRF, create/edit/remove, session revocation, reactivation, materials/colours, and last-operator protection.');
 }

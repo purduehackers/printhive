@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { reference, type PublicJob } from '../lib/shared';
+import { reference, resolveColor, type PublicJob } from '../lib/shared';
 
 function Settings({ job }: { job: PublicJob }) {
-  return <div className="job-settings"><span><i className={`swatch ${job.color}`} />{job.color}</span><span>{job.layer_height} mm</span><span>{job.infill}% infill</span><span>{job.copies} {job.copies === 1 ? 'copy' : 'copies'}</span></div>;
+  return <div className="job-settings"><span>{job.material ?? 'PLA'}</span><span><i className={`swatch ${job.color.toLowerCase()}`} style={{ backgroundColor: resolveColor(job.color) }} />{job.color}</span><span>{job.layer_height} mm</span><span>{job.infill}% infill</span><span>{job.copies} {job.copies === 1 ? 'copy' : 'copies'}</span></div>;
 }
 export default function Queue({ initial }: { initial: PublicJob[] }) {
   const [jobs, setJobs] = useState(initial), [error, setError] = useState('');

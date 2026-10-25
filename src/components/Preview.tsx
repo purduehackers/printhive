@@ -13,6 +13,7 @@ import {
   type SupportOverlay,
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
+import { previewColor, AVAILABLE_PRINTERS, checkPrinterFit } from "../lib/shared";
 
 interface Model {
   positions: Float32Array;
@@ -287,16 +288,7 @@ export default function Preview({
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || !model) return;
-    mesh.material.color.set(
-      (
-        {
-          black: "#414442",
-          white: "#f5f1e7",
-          yellow: "#efc84a",
-          red: "#c9493b",
-        } as Record<string, string>
-      )[color],
-    );
+    mesh.material.color.set(previewColor(color));
     mesh.matrix.makeScale(mirror ? -1 : 1, 1, 1);
     mesh.matrix.setPosition(mirror ? model.min[0] + model.max[0] : 0, 0, 0);
     mesh.matrixWorldNeedsUpdate = true;
@@ -520,6 +512,7 @@ export default function Preview({
           </div>
         </div>
       )}
+      {model && <div className="printer-fit-info"><span className="fit-label">Printer fit</span><div className="fit-badges">{AVAILABLE_PRINTERS.map(printer => { const fits=checkPrinterFit([model.max[0]-model.min[0],model.max[1]-model.min[1],model.max[2]-model.min[2]],printer); return <span key={printer.id} className={`fit-badge ${fits?'fits':'exceeds'}`}>{printer.name}: {fits?'Fits':'Exceeds'}</span>; })}</div></div>}
       {message && (
         <p className="small preview-message" role="status">
           {message}

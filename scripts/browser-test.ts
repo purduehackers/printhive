@@ -1,3 +1,4 @@
+import { asciiSTL } from '../tests/fixtures';
 import { chromium, expect } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { startHarness } from '../tests/harness';
@@ -10,6 +11,11 @@ try {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(h.origin);
   await expect(page.getByRole('heading', { name: 'HIVE 3d printing', exact: true })).toBeVisible();
+  const firstPrinterDetails = page.locator('.printer-details').first();
+  await expect(firstPrinterDetails).not.toHaveAttribute('open', '');
+  await page.getByText('Description & capabilities').first().click();
+  await expect(firstPrinterDetails).toHaveAttribute('open', '');
+  await expect(page.getByText('Large-format dual-nozzle system ideal for multi-material prints')).toBeVisible();
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/queue-desktop.png', fullPage: true });
   await page.goto(h.origin + '/submit');
@@ -74,6 +80,28 @@ try {
   await page.getByRole('button', { name: 'Confirm print' }).click();
   await expect(page.getByRole('heading', { name: 'Print queued' })).toBeVisible();
   await page.goto(h.origin); await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toBeVisible();
+
+  // Test batch submission of multiple STL files
+  await page.goto(h.origin + '/submit');
+  await page.getByLabel('Project / part title').fill('Batch Rover');
+  await page.getByLabel('STL file', { exact: true }).setInputFiles([
+    { name: 'wheel_left.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
+    { name: 'wheel_right.stl', mimeType: 'application/octet-stream', buffer: Buffer.from(asciiSTL) },
+  ]);
+  await expect(page.getByText('2 STL files selected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove wheel_left.stl', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove wheel_right.stl', exact: true })).toBeVisible();
+  await page.getByLabel('Purdue email').fill('browser@purdue.edu');
+  await page.getByRole('button', { name: 'Send confirmation email' }).click();
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  const batchLink = h.messages[1].match(/http[^\s]+\/confirm\?token=[^\s]+/)![0];
+  await page.goto(batchLink);
+  await expect(page.getByRole('button', { name: 'Confirm 2 prints' })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm 2 prints' }).click();
+  await expect(page.getByRole('heading', { name: 'Prints queued' })).toBeVisible();
+  await page.goto(h.origin);
+  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_left' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Batch Rover · wheel_right' })).toBeVisible();
   await page.goto(h.origin + '/operator/login');
   await page.getByLabel('Username').fill('operator'); await page.getByLabel('Password', { exact: true }).fill('test-password-12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -109,6 +137,35 @@ try {
   await expect(page.getByRole('heading', { name: 'Browser test bracket' })).toHaveCount(0);
   await page.goto(h.origin + '/operator?status=rejected');
   await expect(page.getByRole('link', { name: 'Browser test bracket', exact: true })).toBeVisible();
+  // Test queue selection, custom grouping, and batch status update
+  await page.getByLabel('Select Browser test bracket').check();
+  await expect(page.getByRole('region', { name: 'Group status actions' })).toBeVisible();
+  await expect(page.getByText('1 print selected')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download selected STLs ↓' })).toBeVisible();
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download selected STLs ↓' }).click();
+  const downloadedFile = await downloadPromise;
+  expect(downloadedFile.suggestedFilename()).toMatch(/^printhive-[A-F0-9]{8}-bracket\.stl$/);
+
+  // Test custom group creation
+  await page.getByRole('button', { name: 'Group selected' }).click();
+  await page.getByPlaceholder('Group name (e.g. Bed 1)').fill('Bed Alpha');
+  await page.getByRole('button', { name: 'Save group' }).click();
+  await expect(page.locator('.group-badge', { hasText: 'Bed Alpha' })).toBeVisible();
+
+  // Test grouping views
+  await page.getByLabel('Group by:').selectOption('custom');
+  await expect(page.locator('.group-title-info', { hasText: 'Bed Alpha' })).toBeVisible();
+  await page.getByLabel('Group by:').selectOption('material-color');
+  await expect(page.getByRole('button', { name: 'Update group status' })).toBeVisible();
+
+  // Test batch status update
+  await page.getByRole('button', { name: 'Update group status' }).click();
+  await page.getByLabel('New status for selected prints').selectOption('queued');
+  await page.getByRole('button', { name: /Update status for 1 print/ }).click();
+  await expect(page.getByRole('status')).toContainText('Successfully updated status to "queued"');
+
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(h.origin + '/operator');
   await page.getByRole('link', { name: 'Manage operators', exact: true }).click();

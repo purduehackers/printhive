@@ -1,0 +1,21 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import MaterialManager from '../../components/MaterialManager';
+import { currentOperator } from '../../lib/server/auth';
+import { listMaterialsWithColors } from '../../lib/server/materials';
+
+const operator = await currentOperator(Astro);
+if (!operator) return Astro.redirect('/operator/login');
+const materials = await listMaterialsWithColors();
+---
+<Layout title="Manage materials" active="operator">
+  <div class="page-heading operator-heading">
+    <div>
+      <h1>Manage materials &amp; colours</h1>
+      <p>Configure available 3D printing materials and the colours offered for each material.</p>
+    </div>
+    <a href="/operator" class="button secondary">Back to print jobs</a>
+  </div>
+  <MaterialManager initial={materials} client:load />
+  <noscript>Enable JavaScript to manage materials and colours.</noscript>
+</Layout>
