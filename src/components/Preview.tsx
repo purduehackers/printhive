@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
@@ -91,6 +92,9 @@ export default function Preview({
   const [reading, setReading] = useState(false);
   const [orienting, setOrienting] = useState(false);
   const [calculating, setCalculating] = useState(false);
+  const [calculationProgress, setCalculationProgress] = useState<
+    number | "finishing" | null
+  >(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [message, setMessage] = useState("");
@@ -208,39 +212,65 @@ export default function Preview({
   // One complete native slice supplies both time and Layers. Debounce changes and discard stale work.
   useEffect(() => {
     setPreview(null);
+    setCalculationProgress(null);
     if (!file || !profile || !modelReady || !fits || orienting || disabled) {
       setCalculating(false);
       return;
     }
-    const currentRevision = ++revision.current;
     let active = true;
     setCalculating(true);
     const timer = window.setTimeout(async () => {
       try {
         client.current ??= makeClient();
-        const result = await client.current.generate({
-          input: file,
-          profile: profileForPreviewBed(profile, printer),
-          view: "print",
-          support:
-            supports === "none"
-              ? "none"
-              : supports === "normal"
-                ? "normal"
-                : "tree",
-          mirrorX: mirror,
-          rotation,
-          infill,
-          layerHeight,
+        const result = await client.current.generate(
+          {
+            input: file,
+            profile: profileForPreviewBed(profile, printer),
+            view: "print",
+            support:
+              supports === "none"
+                ? "none"
+                : supports === "normal"
+                  ? "normal"
+                  : "tree",
+            mirrorX: mirror,
+            rotation,
+            infill,
+            layerHeight,
+          },
+          {
+            onProgress: (progress) => {
+              if (!active) return;
+              if (progress.stage === "extracting")
+                setCalculationProgress("finishing");
+              else if (
+                progress.stage === "generating" &&
+                Number.isFinite(progress.percent)
+              ) {
+                const percent = Math.min(
+                  99,
+                  Math.max(0, Math.round(progress.percent!)),
+                );
+                setCalculationProgress((current) =>
+                  Math.max(typeof current === "number" ? current : 0, percent),
+                );
+              }
+            },
+          },
+        );
+        if (!active) return;
+        // The worker has finished. Commit its result now, independently of a later tab/input event.
+        flushSync(() => {
+          setPreview(result);
+          setCalculating(false);
+          setLayerIndex(result.layers.length - 1);
+          setOnlyLayer(false);
+          setHidden([]);
         });
-        if (!active || revision.current !== currentRevision) return;
-        setPreview(result);
-        setLayerIndex(result.layers.length - 1);
-        setOnlyLayer(false);
-        setHidden([]);
       } catch (error) {
-        if (!active || revision.current !== currentRevision) return;
+        if (!active) return;
         const code = (error as { code?: string }).code;
+        if (code === "canceled") return;
         setMessage(
           code === "timeout"
             ? "Print-time calculation took too long. Try again."
@@ -251,8 +281,7 @@ export default function Preview({
                 : "Couldn't calculate this print.",
         );
       } finally {
-        if (active && revision.current === currentRevision)
-          setCalculating(false);
+        if (active) setCalculating(false);
       }
     }, 350);
     return () => {
@@ -626,7 +655,7 @@ export default function Preview({
   const dimensions = model?.min
     .map((value, i) => Number((model.max[i] - value).toFixed(1)))
     .join(" × ");
-  const seconds = model ? preview?.time?.estimatedSeconds : undefined;
+  const seconds = preview?.time?.estimatedSeconds;
   const time =
     seconds !== undefined
       ? formatPrintTime(seconds)
@@ -634,8 +663,15 @@ export default function Preview({
         ? "Waiting for orientation…"
         : !fits
           ? "Unavailable"
-          : calculating || reading || profileLoading
-            ? "Calculating…"
+          : calculating ||
+              reading ||
+              profileLoading ||
+            (!message && !disabled)
+            ? calculationProgress === "finishing"
+              ? "Finishing…"
+              : calculationProgress === null
+                ? "Calculating…"
+                : `Calculating… ${calculationProgress}%`
             : "Unavailable";
   return (
     <div className="preview-panel print-preview">

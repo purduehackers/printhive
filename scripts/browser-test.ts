@@ -52,6 +52,13 @@ try {
   });
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await expect(page.locator('.preview-viewport canvas')).toBeVisible();
+  // Fresh-file calculation must finish without any further click, input, or tab change.
+  await expect(page.locator('.print-time strong')).toHaveText(/About|Under/, {
+    timeout: 45000,
+  });
+  await expect(
+    page.getByRole('tab', { name: 'Model', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('radio', { name: 'yellow' }).check();
   await page.getByLabel('Mirror along the X axis').check();
   await page.getByLabel('Number of copies').selectOption('2');
