@@ -29,3 +29,6 @@ test-results/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Provisioned checksum-pinned browser engine (see preview:runtime)
+/public/preview-engine/

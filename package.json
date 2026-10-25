@@ -6,14 +6,15 @@
   "scripts": {
     "dev": "bun scripts/preflight.ts && bun run db:migrate && bun --bun astro dev --host 0.0.0.0",
     "check": "bun --bun astro check",
-    "build": "bun --bun astro build",
+    "build": "bun run preview:runtime && bun --bun astro build",
     "start": "bun scripts/preflight.ts && bun run db:migrate && bun dist/server/entry.mjs",
     "test": "bun test tests",
     "test:e2e": "bun scripts/e2e.ts",
     "test:browser": "bun scripts/browser-test.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "operator:add": "bun scripts/operator.ts",
-    "cleanup": "bun scripts/cleanup.ts"
+    "cleanup": "bun scripts/cleanup.ts",
+    "preview:runtime": "bun node_modules/@time-estimator/browser-preview/scripts/fetch-runtime.mjs public/preview-engine"
   },
   "engines": {
     "bun": ">=1.4.3"
@@ -25,7 +26,8 @@
     "nodemailer": "^10.1.7",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.1.0.93e73548a785.tgz"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.11",

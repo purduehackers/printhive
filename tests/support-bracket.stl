@@ -1,0 +1,170 @@
+solid support_test
+facet normal 0 0 0
+outer loop
+vertex 10 -5 7
+vertex 16 5 7
+vertex 16 -5 7
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 7
+vertex 10 5 7
+vertex 16 5 7
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 16 -5 27
+vertex 16 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 16 5 27
+vertex 10 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 7
+vertex 16 -5 7
+vertex 16 -5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 7
+vertex 16 -5 27
+vertex 10 -5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 16 -5 7
+vertex 16 5 7
+vertex 16 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 16 -5 7
+vertex 16 5 27
+vertex 16 -5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 16 5 7
+vertex 10 5 7
+vertex 10 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 16 5 7
+vertex 10 5 27
+vertex 16 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 5 7
+vertex 10 -5 7
+vertex 10 -5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 5 7
+vertex 10 -5 27
+vertex 10 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 40 5 27
+vertex 40 -5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 10 5 27
+vertex 40 5 27
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 31
+vertex 40 -5 31
+vertex 40 5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 31
+vertex 40 5 31
+vertex 10 5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 40 -5 27
+vertex 40 -5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 -5 27
+vertex 40 -5 31
+vertex 10 -5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 40 -5 27
+vertex 40 5 27
+vertex 40 5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 40 -5 27
+vertex 40 5 31
+vertex 40 -5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 40 5 27
+vertex 10 5 27
+vertex 10 5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 40 5 27
+vertex 10 5 31
+vertex 40 5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 5 27
+vertex 10 -5 27
+vertex 10 -5 31
+endloop
+endfacet
+facet normal 0 0 0
+outer loop
+vertex 10 5 27
+vertex 10 -5 31
+vertex 10 5 31
+endloop
+endfacet
+endsolid support_test

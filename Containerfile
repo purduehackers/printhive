@@ -1,6 +1,7 @@
 FROM docker.io/oven/bun:1.4.3 AS build
 WORKDIR /app
 COPY package.json bun.lock ./
+COPY vendor ./vendor
 RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run check && bun test tests && bun run build
@@ -10,6 +11,7 @@ WORKDIR /app
 USER root
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4321 DATA_DIR=/data
 COPY package.json bun.lock ./
+COPY vendor ./vendor
 RUN bun install --frozen-lockfile --production && mkdir /data
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
