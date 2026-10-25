@@ -154,7 +154,9 @@ export default function Preview({
         setMessage(
           (error as { code?: string }).code === "canceled"
             ? "Preview canceled."
-            : "Couldn't find an orientation. Choose a face instead.",
+            : error instanceof Error
+              ? error.message.slice(0, 200)
+              : "Couldn't find an orientation. Choose a face instead.",
         );
     } finally {
       if (revision.current === currentRevision) setBusy(false);

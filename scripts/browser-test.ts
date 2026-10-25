@@ -7,7 +7,13 @@ import { join } from 'node:path';
 const h = await startHarness();
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--host-resolver-rules=MAP preview.test 127.0.0.1',
+      '--no-proxy-server',
+    ],
+  });
   const page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
   });
@@ -541,9 +547,46 @@ try {
     path: 'test-results/submit-mobile.png',
     fullPage: true,
   });
+  // A LAN-style HTTP hostname has no Web Crypto, including inside its module workers.
+  const httpPage = await browser.newPage();
+  httpPage.on('pageerror', (error) => errors.push(error.message));
+  await httpPage.goto(
+    h.origin.replace('127.0.0.1', 'preview.test') + '/submit',
+  );
+  expect(await httpPage.evaluate(() => isSecureContext)).toBe(false);
+  expect(await httpPage.evaluate(() => Boolean(crypto.subtle))).toBe(false);
+  await httpPage.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'http-bracket.stl',
+    mimeType: 'application/octet-stream',
+    buffer: await readFile(
+      new URL('../tests/support-bracket.stl', import.meta.url),
+    ),
+  });
+  await expect(httpPage.getByText('30 × 10 × 24 mm')).toBeVisible();
+  await httpPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  await httpPage.getByRole('button', { name: 'Auto', exact: true }).click();
+  await expect(
+    httpPage.getByRole('button', { name: 'Auto', exact: true }),
+  ).toBeEnabled({ timeout: 45000 });
+  await expect(httpPage.getByText('30 × 10 × 24 mm')).toHaveCount(0);
+  await httpPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  await httpPage.route('**/preview-engine/manifest.json', (route) =>
+    route.fulfill({ status: 503, body: 'Unavailable' }),
+  );
+  await httpPage.getByRole('button', { name: 'Auto', exact: true }).click();
+  await expect(
+    httpPage.getByText('Could not load engine manifest (503)'),
+  ).toBeVisible();
+  await httpPage.close();
   expect(errors).toEqual([]);
   console.log(
-    'Browser flow passed: worker/WebGL preview, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.',
+    'Browser flow passed: worker/WebGL preview, HTTP slicing/orientation, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.',
   );
 } finally {
   await browser?.close();

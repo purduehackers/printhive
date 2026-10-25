@@ -1,12 +1,12 @@
 # Browser preview package
 
 Source: the separate browser/ package in the time_estimator repository.
-Source commit: e8bddc1ac5790f62a8259ebbf08b942000eb7890.
-Package: @time-estimator/browser-preview 0.3.0 (private).
-Archive SHA-256: 659ca5cc2bf7dd680c9fa6fab17e5429a9314abb0a19eff088c8782556b711af.
+Source commit: e9587e80dd23d5cbcb672c56508b99fc587aa93e.
+Package: @time-estimator/browser-preview 0.3.1 (private).
+Archive SHA-256: 1d01f7a595ec8c43ae6ba0eec0ac4f2638ee21a8727becaea0f99ff198f20533.
 
 The archive contains the reusable JavaScript API, declarations, pose/STL export, optional
-Three.js renderer, prebuilt C++ STL importer, dependency notices and provisioning tools.
+Three.js renderer, prebuilt C++ STL importer, dependency notices and provisioning tools. A pinned MIT-licensed SHA-256 fallback supports ordinary HTTP development origins while retaining checksum verification.
 The importer is compiled independently from the existing source-matched STL repair program.
 It does not link the native/server estimator. Full Orca slicing engine assets are separately
 checksum-provisioned by preview:runtime and are not committed here.
