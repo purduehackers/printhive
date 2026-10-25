@@ -4,8 +4,9 @@ export function prepareOrientedFile(
   rotation: number[] | undefined,
   mirror: boolean,
   signal: AbortSignal,
+  scale = 1,
 ): Promise<File> {
-  if (!rotation && !mirror) return Promise.resolve(file);
+  if (!rotation && !mirror && scale === 1) return Promise.resolve(file);
   return new Promise((resolve, reject) => {
     const worker = new Worker(
       new URL('../workers/orient-stl.worker.ts', import.meta.url),
@@ -33,6 +34,6 @@ export function prepareOrientedFile(
       finish();
       reject(new Error('Could not prepare the oriented STL.'));
     };
-    worker.postMessage({ file, rotation, mirror });
+    worker.postMessage({ file, rotation, mirror, scale });
   });
 }

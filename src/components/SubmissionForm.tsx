@@ -1,4 +1,11 @@
-import { lazy, Suspense, useRef, useState, type SubmitEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  useMemo,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from 'react';
 import {
   INFILLS,
   LAYERS,
@@ -15,8 +22,14 @@ const DEFAULT_ROTATION = [...IDENTITY_ROTATION];
 interface FileOptions {
   copies: number;
   mirror: boolean;
+  material: string;
+  color: string;
+  infill: number;
+  layerHeight: number;
+  supports: string;
+  units: string;
 }
-const DEFAULT_FILE_OPTIONS: FileOptions = { copies: 1, mirror: false };
+const UNIT_SCALES: Record<string, number> = { mm: 1, m: 1000, in: 25.4 };
 const Preview = lazy(() => import('./Preview'));
 
 const DEFAULT_MATERIALS: Material[] = [
@@ -47,14 +60,22 @@ export default function SubmissionForm({
     () => new Map(),
   );
   const [preparing, setPreparing] = useState(false);
-  const [material, setMaterial] = useState(materials[0].name);
-  const [color, setColor] = useState(materials[0].colors[0]?.name ?? 'black');
+  const defaults = useMemo<FileOptions>(
+    () => ({
+      copies: 1,
+      mirror: false,
+      material: materials[0].name,
+      color: materials[0].colors[0]?.name ?? 'black',
+      infill: 15,
+      layerHeight: 0.2,
+      supports: 'operator',
+      units: 'mm',
+    }),
+    [materials],
+  );
   const [fileOptions, setFileOptions] = useState<Map<File, FileOptions>>(
     () => new Map(),
   );
-  const [infill, setInfill] = useState(15),
-    [layerHeight, setLayerHeight] = useState(0.2),
-    [supports, setSupports] = useState('operator');
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
     [message, setMessage] = useState(''),
@@ -63,30 +84,40 @@ export default function SubmissionForm({
     controllerRef = useRef<AbortController | null>(null);
   const [email, setEmail] = useState('');
 
-  const currentMat =
-    materials.find((m) => m.name.toLowerCase() === material.toLowerCase()) ??
-    materials[0];
-  const availableColors = currentMat?.colors ?? [];
   const activeFile = files[activeIndex] ?? files[0] ?? null;
   const activeRotation = activeFile
     ? (orientations.get(activeFile) ?? DEFAULT_ROTATION)
     : DEFAULT_ROTATION;
   const activeOptions = activeFile
-    ? (fileOptions.get(activeFile) ?? DEFAULT_FILE_OPTIONS)
-    : DEFAULT_FILE_OPTIONS;
-  const { copies, mirror } = activeOptions;
+    ? (fileOptions.get(activeFile) ?? defaults)
+    : defaults;
+  const {
+    copies,
+    mirror,
+    material,
+    color,
+    infill,
+    layerHeight,
+    supports,
+    units,
+  } = activeOptions;
+  const scale = UNIT_SCALES[units];
+  const currentMat =
+    materials.find((m) => m.name.toLowerCase() === material.toLowerCase()) ??
+    materials[0];
+  const availableColors = currentMat?.colors ?? [];
+
   function updateFileOptions(change: Partial<FileOptions>) {
     if (activeFile)
       setFileOptions((current) =>
         new Map(current).set(activeFile, {
-          ...(current.get(activeFile) ?? DEFAULT_FILE_OPTIONS),
+          ...(current.get(activeFile) ?? defaults),
           ...change,
         }),
       );
   }
 
   function handleMaterialChange(nextName: string) {
-    setMaterial(nextName);
     const nextMat = materials.find(
       (m) => m.name.toLowerCase() === nextName.toLowerCase(),
     );
@@ -94,7 +125,12 @@ export default function SubmissionForm({
       nextMat &&
       !nextMat.colors.some((c) => c.name.toLowerCase() === color.toLowerCase())
     ) {
-      setColor(nextMat.colors[0]?.name ?? 'black');
+      updateFileOptions({
+        material: nextName,
+        color: nextMat.colors[0]?.name ?? 'black',
+      });
+    } else {
+      updateFileOptions({ material: nextName });
     }
   }
 
@@ -228,6 +264,7 @@ export default function SubmissionForm({
             orientations.get(file),
             fileOptions.get(file)?.mirror ?? false,
             controller.signal,
+            UNIT_SCALES[(fileOptions.get(file) ?? defaults).units],
           ),
         );
       if (uploadFiles.some((file) => file.size > MAX_FILE_BYTES))
@@ -285,7 +322,13 @@ export default function SubmissionForm({
             items: uploadFiles.map((f, index) => ({
               original_filename: f.name,
               file_size: f.size,
-              copies: fileOptions.get(files[index])?.copies ?? 1,
+              copies: (fileOptions.get(files[index]) ?? defaults).copies,
+              material: (fileOptions.get(files[index]) ?? defaults).material,
+              color: (fileOptions.get(files[index]) ?? defaults).color,
+              infill: (fileOptions.get(files[index]) ?? defaults).infill,
+              layer_height: (fileOptions.get(files[index]) ?? defaults)
+                .layerHeight,
+              supports: (fileOptions.get(files[index]) ?? defaults).supports,
             })),
           }),
         });
@@ -495,6 +538,119 @@ export default function SubmissionForm({
                   <span>Mirror along the X axis</span>
                 </label>
               </div>
+              <details className="file-settings">
+                <summary>More settings</summary>
+                <div className="file-settings-body">
+                  <div className="field-grid">
+                    <label>
+                      Model units
+                      <select
+                        value={units}
+                        onChange={(event) =>
+                          updateFileOptions({ units: event.target.value })
+                        }
+                      >
+                        <option value="mm">Millimeters (mm)</option>
+                        <option value="m">Meters (m)</option>
+                        <option value="in">Inches (in)</option>
+                      </select>
+                    </label>
+                    <label>
+                      Material
+                      <select
+                        name="material"
+                        value={material}
+                        onChange={(e) => handleMaterialChange(e.target.value)}
+                      >
+                        {materials.map((m) => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Infill
+                      <select
+                        name="infill"
+                        value={infill}
+                        onChange={(e) =>
+                          updateFileOptions({ infill: Number(e.target.value) })
+                        }
+                      >
+                        {INFILLS.map((v) => (
+                          <option key={v} value={v}>
+                            {v}%
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Layer height
+                      <select
+                        name="layer_height"
+                        value={layerHeight}
+                        onChange={(e) =>
+                          updateFileOptions({
+                            layerHeight: Number(e.target.value),
+                          })
+                        }
+                      >
+                        {LAYERS.map((v) => (
+                          <option key={v} value={v}>
+                            {v} mm
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Supports
+                      <select
+                        name="supports"
+                        value={supports}
+                        onChange={(e) =>
+                          updateFileOptions({ supports: e.target.value })
+                        }
+                      >
+                        {SUPPORTS.map((v) => (
+                          <option key={v} value={v}>
+                            {supportLabel(v)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <fieldset className="color-options">
+                    <legend>Filament color</legend>
+                    {availableColors.map((c) => {
+                      const isSelected =
+                        color.toLowerCase() === c.name.toLowerCase();
+                      const hex = resolveColor(c.name, c.code);
+                      return (
+                        <label
+                          className={isSelected ? 'selected' : ''}
+                          key={c.name}
+                        >
+                          <input
+                            type="radio"
+                            name="color"
+                            value={c.name}
+                            checked={isSelected}
+                            onChange={() =>
+                              updateFileOptions({ color: c.name })
+                            }
+                          />
+                          <i
+                            className={`swatch ${c.name.toLowerCase()}`}
+                            style={{ backgroundColor: hex }}
+                          />
+                          <span>{c.name}</span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+                </div>
+              </details>
             </fieldset>
           )}
           <label>
@@ -506,93 +662,6 @@ export default function SubmissionForm({
               placeholder="Orientation, fit, or other requirements"
             />
           </label>
-        </fieldset>
-        <fieldset disabled={busy} className="form-section">
-          <legend>Print settings</legend>
-          {files.length > 1 && (
-            <p className="small muted">These settings apply to all files.</p>
-          )}
-          <div className="field-grid">
-            <label>
-              Material
-              <select
-                name="material"
-                value={material}
-                onChange={(e) => handleMaterialChange(e.target.value)}
-              >
-                {materials.map((m) => (
-                  <option key={m.name} value={m.name}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Infill
-              <select
-                name="infill"
-                value={infill}
-                onChange={(e) => setInfill(Number(e.target.value))}
-              >
-                {INFILLS.map((v) => (
-                  <option key={v} value={v}>
-                    {v}%
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Layer height
-              <select
-                name="layer_height"
-                value={layerHeight}
-                onChange={(e) => setLayerHeight(Number(e.target.value))}
-              >
-                {LAYERS.map((v) => (
-                  <option key={v} value={v}>
-                    {v} mm
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Supports
-              <select
-                name="supports"
-                value={supports}
-                onChange={(e) => setSupports(e.target.value)}
-              >
-                {SUPPORTS.map((v) => (
-                  <option key={v} value={v}>
-                    {supportLabel(v)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <fieldset className="color-options">
-            <legend>Filament color</legend>
-            {availableColors.map((c) => {
-              const isSelected = color.toLowerCase() === c.name.toLowerCase();
-              const hex = resolveColor(c.name, c.code);
-              return (
-                <label className={isSelected ? 'selected' : ''} key={c.name}>
-                  <input
-                    type="radio"
-                    name="color"
-                    value={c.name}
-                    checked={isSelected}
-                    onChange={() => setColor(c.name)}
-                  />
-                  <i
-                    className={`swatch ${c.name.toLowerCase()}`}
-                    style={{ backgroundColor: hex }}
-                  />
-                  <span>{c.name}</span>
-                </label>
-              );
-            })}
-          </fieldset>
         </fieldset>
         <fieldset disabled={busy} className="form-section">
           <legend>Contact</legend>
@@ -675,6 +744,8 @@ export default function SubmissionForm({
             )}
             mirror={mirror}
             copies={copies}
+            scale={scale}
+            onUseMeters={() => updateFileOptions({ units: 'm' })}
             infill={infill}
             layerHeight={layerHeight}
             supports={supports}

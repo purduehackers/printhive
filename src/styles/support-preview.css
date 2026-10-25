@@ -41,3 +41,5 @@
 .file-options-controls{display:flex;gap:20px;align-items:center;flex-wrap:wrap}.file-options-controls>label:first-child{margin-bottom:0;min-width:125px}.file-options-controls .checkbox-label{flex:1;min-width:140px;font-size:.75rem}
 .batch-file-details{display:flex;flex-direction:column;gap:4px;min-width:0}.batch-file-options-summary{font-size:.65rem;color:var(--muted)}
 .batch-file-list li.active{box-shadow:inset 3px 0 var(--green)}.batch-file-list li.active .batch-file-name{color:var(--green);font-weight:700}
+
+.file-settings{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}.file-settings>summary{cursor:pointer;font-size:.8rem;font-weight:600}.file-settings-body{padding-top:18px}.file-settings-body .color-options{margin-bottom:0}.unit-warning{border:1px solid #dcb99c;background:#f5e8d9;padding:12px;border-radius:5px;line-height:1.6}.file-settings-body .field-grid{gap:0 16px}

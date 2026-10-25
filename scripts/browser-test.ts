@@ -59,6 +59,11 @@ try {
   await expect(
     page.getByRole('tab', { name: 'Model', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    page.getByText('Quick estimate \u00b7 model only'),
+  ).toBeVisible();
+  expect(nativeLoads).toBe(0);
+  await page.getByText('More settings', { exact: true }).click();
   await page.getByRole('radio', { name: 'yellow' }).check();
   await page.getByLabel('Mirror along the X axis').check();
   await page.getByLabel('Number of copies').selectOption('2');
@@ -86,7 +91,8 @@ try {
   await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
-  expect(nativeLoads).toBe(completedLoads);
+  expect(nativeLoads).toBe(completedLoads + 1);
+  await expect(page.getByText(/Quick estimate/)).toHaveCount(0);
   const canvas = await page.locator('.preview-viewport canvas').elementHandle();
   await expect(
     page.getByRole('combobox', { name: 'Supports', exact: true }),
@@ -213,7 +219,14 @@ try {
     .selectOption('normal');
   const uploadedIds: string[] = [];
   let submittedMetadata: Record<string, unknown> = {};
-  let submittedBatch: { items: { copies: number }[] } = { items: [] };
+  let submittedBatch: {
+    items: {
+      copies: number;
+      infill: number;
+      color: string;
+      supports: string;
+    }[];
+  } = { items: [] };
   page.on('request', (request) => {
     if (
       request.method() === 'PUT' &&
@@ -298,6 +311,14 @@ try {
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await page.getByLabel('Number of copies').selectOption('2');
   await page.getByLabel('Mirror along the X axis').check();
+  await page.getByText('More settings', { exact: true }).click();
+  await page
+    .getByRole('combobox', { name: 'Infill', exact: true })
+    .selectOption('30');
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('none');
+  await page.getByRole('radio', { name: 'red', exact: true }).check();
   await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
   await page.getByRole('button', { name: 'Front', exact: true }).click();
   await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
@@ -306,6 +327,12 @@ try {
   await expect(page.getByLabel('Number of copies')).toHaveValue('1');
   await expect(page.getByLabel('Mirror along the X axis')).not.toBeChecked();
   await page.getByLabel('Number of copies').selectOption('3');
+  await expect(
+    page.getByRole('combobox', { name: 'Infill', exact: true }),
+  ).toHaveValue('15');
+  await expect(
+    page.getByRole('radio', { name: 'black', exact: true }),
+  ).toBeChecked();
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await page.getByRole('button', { name: /^wheel_left\.stl/ }).click();
   await expect(page.getByLabel('Number of copies')).toHaveValue('2');
@@ -322,6 +349,16 @@ try {
     page.getByRole('heading', { name: 'Check your email' }),
   ).toBeVisible();
   expect(submittedBatch.items.map((item) => item.copies)).toEqual([2, 3]);
+  expect(
+    submittedBatch.items.map((item) => ({
+      infill: item.infill,
+      color: item.color,
+      supports: item.supports,
+    })),
+  ).toEqual([
+    { infill: 30, color: 'red', supports: 'none' },
+    { infill: 15, color: 'black', supports: 'operator' },
+  ]);
   let firstTriangle: number[] = [];
   const batchLeft = await parseSTL(
     new Blob([await readFile(join(h.dir, 'files', uploadedIds[1] + '.stl'))]),
@@ -593,6 +630,109 @@ try {
     path: 'test-results/submit-mobile.png',
     fullPage: true,
   });
+  const unitsPage = await browser.newPage();
+  unitsPage.on('pageerror', (error) => errors.push(error.message));
+  await unitsPage.goto(h.origin + '/submit');
+  const sourceSTL = await readFile(
+    new URL('../tests/support-bracket.stl', import.meta.url),
+    'utf8',
+  );
+  const tinySTL = Buffer.from(
+    sourceSTL.replace(
+      /vertex ([-\d.]+) ([-\d.]+) ([-\d.]+)/g,
+      (_, x, y, z) =>
+        `vertex ${Number(x) / 1000} ${Number(y) / 1000} ${Number(z) / 1000}`,
+    ),
+  );
+  await unitsPage.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'meter-export.stl',
+    mimeType: 'application/octet-stream',
+    buffer: tinySTL,
+  });
+  await expect(
+    unitsPage.getByText(/This file is smaller than 1 mm/),
+  ).toBeVisible();
+  await unitsPage
+    .getByRole('button', { name: 'Use meters', exact: true })
+    .click();
+  await expect(unitsPage.getByText('30 \u00d7 10 \u00d7 24 mm')).toBeVisible();
+  await expect(unitsPage.locator('.print-time strong')).toHaveText(
+    /About|Under/,
+    { timeout: 10000 },
+  );
+  await unitsPage.getByText('More settings', { exact: true }).click();
+  await expect(unitsPage.getByLabel('Model units')).toHaveValue('m');
+  await unitsPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+    timeout: 45000,
+  });
+  if (process.env.PREVIEW_UNIT_MODEL) {
+    await unitsPage
+      .getByRole('button', { name: 'Clear all', exact: true })
+      .count()
+      .then(async (count) => {
+        if (count)
+          await unitsPage
+            .getByRole('button', { name: 'Clear all', exact: true })
+            .click();
+      });
+    await unitsPage
+      .getByRole('button', { name: 'Remove meter-export.stl', exact: true })
+      .click();
+    await unitsPage
+      .getByLabel('STL file', { exact: true })
+      .setInputFiles(process.env.PREVIEW_UNIT_MODEL);
+    await expect(
+      unitsPage.getByText(/This file is smaller than 1 mm/),
+    ).toBeVisible();
+    await unitsPage
+      .getByRole('button', { name: 'Use meters', exact: true })
+      .click();
+    await expect(unitsPage.locator('.print-time strong')).toHaveText(
+      /About|Under/,
+      { timeout: 10000 },
+    );
+    await unitsPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+    await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+      timeout: 45000,
+    });
+    await unitsPage
+      .locator('.preview-panel')
+      .screenshot({ path: 'test-results/units-corrected-preview.png' });
+  }
+  let unitUpload = '';
+  unitsPage.on('request', (request) => {
+    if (request.method() === 'PUT')
+      unitUpload = request.url().match(/submissions\/([^/]+)\/file/)![1];
+  });
+  await unitsPage
+    .getByLabel('Project / part title')
+    .fill('Unit conversion regression');
+  await unitsPage.getByLabel('Purdue email').fill('units@purdue.edu');
+  await unitsPage
+    .getByRole('button', { name: 'Send confirmation email' })
+    .click();
+  await expect(
+    unitsPage.getByRole('heading', { name: 'Check your email' }),
+  ).toBeVisible();
+  const savedUnits = await parseSTL(
+    new Blob([await readFile(join(h.dir, 'files', unitUpload + '.stl'))]),
+  );
+  const originalUnits = await parseSTL(
+    new Blob([
+      process.env.PREVIEW_UNIT_MODEL
+        ? await readFile(process.env.PREVIEW_UNIT_MODEL)
+        : tinySTL,
+    ]),
+  );
+  expect(savedUnits.triangles).toBe(originalUnits.triangles);
+  expect(savedUnits.min[2]).toBeCloseTo(0, 5);
+  for (let axis = 0; axis < 3; axis++)
+    expect(savedUnits.max[axis] - savedUnits.min[axis]).toBeCloseTo(
+      (originalUnits.max[axis] - originalUnits.min[axis]) * 1000,
+      3,
+    );
+  await unitsPage.close();
   // A LAN-style HTTP hostname has no Web Crypto, including inside its module workers.
   const httpPage = await browser.newPage();
   httpPage.on('pageerror', (error) => errors.push(error.message));
@@ -641,13 +781,11 @@ try {
   await httpPage
     .getByRole('button', { name: 'Reset orientation', exact: true })
     .click();
-  await httpPage
-    .getByLabel('STL file', { exact: true })
-    .setInputFiles({
-      name: 'large-bed.stl',
-      mimeType: 'application/octet-stream',
-      buffer: scaled(10),
-    });
+  await httpPage.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'large-bed.stl',
+    mimeType: 'application/octet-stream',
+    buffer: scaled(10),
+  });
   await httpPage.getByRole('button', { name: /^large-bed\.stl/ }).click();
   await expect(httpPage.locator('.preview-bed')).toContainText('Bambu H2D');
   await expect(httpPage.locator('.preview-bed')).toContainText(
@@ -657,13 +795,11 @@ try {
     /About|Under/,
     { timeout: 45000 },
   );
-  await httpPage
-    .getByLabel('STL file', { exact: true })
-    .setInputFiles({
-      name: 'too-large.stl',
-      mimeType: 'application/octet-stream',
-      buffer: scaled(11),
-    });
+  await httpPage.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'too-large.stl',
+    mimeType: 'application/octet-stream',
+    buffer: scaled(11),
+  });
   await httpPage.getByRole('button', { name: /^too-large\.stl/ }).click();
   await expect(httpPage.locator('.preview-bed')).toContainText(
     'Too large for this bed',

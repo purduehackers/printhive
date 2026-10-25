@@ -7,6 +7,7 @@ import {
   type PreviewClient,
   type PreviewProfile,
   type SupportPreview,
+  type FastPreview,
 } from "@time-estimator/browser-preview";
 import { displayTransform } from "@time-estimator/browser-preview/geometry";
 import {
@@ -33,6 +34,7 @@ interface Model {
   file: File;
   rotation: number[];
   mirror: boolean;
+  scale: number;
   positions: Float32Array;
   min: number[];
   max: number[];
@@ -43,11 +45,13 @@ interface Props {
   color: string;
   copies: number;
   mirror: boolean;
+  scale: number;
   infill: number;
   layerHeight: number;
   supports: string;
   rotation: number[];
   onRotationChange: (rotation: number[]) => void;
+  onUseMeters: () => void;
   disabled?: boolean;
 }
 const categories = [
@@ -63,16 +67,19 @@ export default function Preview({
   color,
   copies,
   mirror,
+  scale,
   infill,
   layerHeight,
   supports,
   rotation,
   onRotationChange,
+  onUseMeters,
   disabled = false,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const fileWorker = useRef<Worker | null>(null);
   const client = useRef<PreviewClient<File> | null>(null);
+  const layerClient = useRef<PreviewClient<File> | null>(null);
   const orientationClient = useRef<PreviewClient<File> | null>(null);
   const meshRef = useRef<THREE.Mesh<
     THREE.BufferGeometry,
@@ -87,6 +94,8 @@ export default function Preview({
   const faceModeRef = useRef(false);
   const [loadedModel, setModel] = useState<Model | null>(null);
   const [profile, setProfile] = useState<PreviewProfile | null>(null);
+  const [quick, setQuick] = useState<FastPreview | null>(null);
+  const [layerCalculating, setLayerCalculating] = useState(false);
   const [preview, setPreview] = useState<SupportPreview | null>(null);
   const [tab, setTab] = useState<"model" | "layers">("model");
   const [reading, setReading] = useState(false);
@@ -105,7 +114,8 @@ export default function Preview({
   const model =
     loadedModel?.file === file &&
     loadedModel.rotation === rotation &&
-    loadedModel.mirror === mirror
+    loadedModel.mirror === mirror &&
+    loadedModel.scale === scale
       ? loadedModel
       : null;
   const modelDimensions = model
@@ -116,6 +126,11 @@ export default function Preview({
     : PREVIEW_PRINTERS[0];
   const fits = model ? fitsPreviewPrinter(modelDimensions, printer) : true;
   const modelReady = Boolean(model);
+  const tooSmall =
+    modelReady &&
+    scale === 1 &&
+    Math.max(...modelDimensions) < 1 &&
+    modelDimensions[2] < layerHeight / 2;
   faceModeRef.current = faceMode && !disabled;
   faceAction.current = (normal) => {
     onRotationChange(multiplyRotations(rotationForFace(normal), rotation));
@@ -143,6 +158,7 @@ export default function Preview({
       controller.abort();
       client.current?.dispose();
       orientationClient.current?.dispose();
+      layerClient.current?.dispose();
       client.current = null;
       orientationClient.current = null;
     };
@@ -152,12 +168,14 @@ export default function Preview({
     revision.current++;
     client.current?.cancel();
     orientationClient.current?.cancel();
+    layerClient.current?.cancel();
     overlayRef.current?.dispose();
     overlayRef.current = null;
     setPreview(null);
+    setQuick(null);
     setOrienting(false);
     setMessage("");
-  }, [file, mirror, rotation, infill, layerHeight, supports]);
+  }, [file, mirror, rotation, scale, infill, layerHeight, supports]);
 
   useEffect(() => {
     setTab("model");
@@ -190,6 +208,7 @@ export default function Preview({
         input: file,
         rotation,
         mirrorX: mirror,
+        scale,
       });
       if (revision.current === currentRevision) {
         setFaceMode(false);
@@ -209,11 +228,18 @@ export default function Preview({
     }
   }
 
-  // One complete native slice supplies both time and Layers. Debounce changes and discard stale work.
+  // Quick timing reuses the native C++ sampled estimator and never starts full slicing.
   useEffect(() => {
-    setPreview(null);
-    setCalculationProgress(null);
-    if (!file || !profile || !modelReady || !fits || orienting || disabled) {
+    setQuick(null);
+    if (
+      !file ||
+      !profile ||
+      !modelReady ||
+      !fits ||
+      tooSmall ||
+      orienting ||
+      disabled
+    ) {
       setCalculating(false);
       return;
     }
@@ -222,68 +248,36 @@ export default function Preview({
     const timer = window.setTimeout(async () => {
       try {
         client.current ??= makeClient();
-        const result = await client.current.generate(
-          {
-            input: file,
-            profile: profileForPreviewBed(profile, printer),
-            view: "print",
-            support:
-              supports === "none"
-                ? "none"
-                : supports === "normal"
-                  ? "normal"
-                  : "tree",
-            mirrorX: mirror,
-            rotation,
-            infill,
-            layerHeight,
-          },
-          {
-            onProgress: (progress) => {
-              if (!active) return;
-              if (progress.stage === "extracting")
-                setCalculationProgress("finishing");
-              else if (
-                progress.stage === "generating" &&
-                Number.isFinite(progress.percent)
-              ) {
-                const percent = Math.min(
-                  99,
-                  Math.max(0, Math.round(progress.percent!)),
-                );
-                setCalculationProgress((current) =>
-                  Math.max(typeof current === "number" ? current : 0, percent),
-                );
-              }
-            },
-          },
-        );
-        if (!active) return;
-        // The worker has finished. Commit its result now, independently of a later tab/input event.
-        flushSync(() => {
-          setPreview(result);
-          setCalculating(false);
-          setLayerIndex(result.layers.length - 1);
-          setOnlyLayer(false);
-          setHidden([]);
+        const result = await client.current.estimate({
+          input: file,
+          profile: profileForPreviewBed(profile, printer),
+          support:
+            supports === "none"
+              ? "none"
+              : supports === "normal"
+                ? "normal"
+                : "tree",
+          scope: "model_body",
+          mirrorX: mirror,
+          rotation,
+          scale,
+          infill,
+          layerHeight,
         });
+        if (active)
+          flushSync(() => {
+            setQuick(result);
+            setCalculating(false);
+          });
       } catch (error) {
-        if (!active) return;
-        const code = (error as { code?: string }).code;
-        if (code === "canceled") return;
-        setMessage(
-          code === "timeout"
-            ? "Print-time calculation took too long. Try again."
-            : code === "out_of_memory"
-              ? "The browser ran out of slicing memory. Close other tabs and retry."
-              : error instanceof Error
-                ? error.message.slice(0, 200)
-                : "Couldn't calculate this print.",
-        );
+        if (active && (error as { code?: string }).code !== "canceled")
+          setMessage(
+            "Quick estimate unavailable for this shape. Open Layers for a full estimate.",
+          );
       } finally {
         if (active) setCalculating(false);
       }
-    }, 350);
+    }, 150);
     return () => {
       active = false;
       clearTimeout(timer);
@@ -295,8 +289,110 @@ export default function Preview({
     modelReady,
     printer,
     fits,
+    tooSmall,
     mirror,
     rotation,
+    scale,
+    infill,
+    layerHeight,
+    supports,
+    orienting,
+    disabled,
+    retry,
+  ]);
+
+  // Full Orca paths (including supports) are only needed after the user opens Layers.
+  useEffect(() => {
+    if (
+      tab !== "layers" ||
+      preview ||
+      !file ||
+      !profile ||
+      !modelReady ||
+      !fits ||
+      tooSmall ||
+      orienting ||
+      disabled
+    ) {
+      setLayerCalculating(false);
+      return;
+    }
+    let active = true;
+    setLayerCalculating(true);
+    setCalculationProgress(null);
+    (async () => {
+      try {
+        layerClient.current ??= makeClient();
+        const result = await layerClient.current.generate(
+          {
+            input: file,
+            profile: profileForPreviewBed(profile, printer),
+            support:
+              supports === "none"
+                ? "none"
+                : supports === "normal"
+                  ? "normal"
+                  : "tree",
+            view: "print",
+            mirrorX: mirror,
+            rotation,
+            scale,
+            infill,
+            layerHeight,
+          },
+          {
+            onProgress: (progress) => {
+              if (!active) return;
+              if (progress.stage === "extracting")
+                setCalculationProgress("finishing");
+              else if (
+                progress.stage === "generating" &&
+                Number.isFinite(progress.percent)
+              )
+                setCalculationProgress((current) =>
+                  Math.max(
+                    typeof current === "number" ? current : 0,
+                    Math.min(99, Math.round(progress.percent)),
+                  ),
+                );
+            },
+          },
+        );
+        if (active)
+          flushSync(() => {
+            setPreview(result);
+            setLayerCalculating(false);
+            setLayerIndex(result.layers.length - 1);
+            setOnlyLayer(false);
+            setHidden([]);
+          });
+      } catch (error) {
+        if (active && (error as { code?: string }).code !== "canceled")
+          setMessage(
+            error instanceof Error
+              ? error.message.slice(0, 200)
+              : "Couldn't generate layers.",
+          );
+      } finally {
+        if (active) setLayerCalculating(false);
+      }
+    })();
+    return () => {
+      active = false;
+      layerClient.current?.cancel();
+    };
+  }, [
+    tab,
+    preview,
+    file,
+    profile,
+    modelReady,
+    printer,
+    fits,
+    tooSmall,
+    mirror,
+    rotation,
+    scale,
     infill,
     layerHeight,
     supports,
@@ -326,7 +422,7 @@ export default function Preview({
     worker.onmessage = ({ data }) => {
       setReading(false);
       if (data.error) setMessage("Couldn't open this preview.");
-      else setModel({ ...data, file, rotation, mirror });
+      else setModel({ ...data, file, rotation, mirror, scale });
       worker.terminate();
     };
     worker.onerror = () => {
@@ -334,12 +430,12 @@ export default function Preview({
       setMessage("Couldn't open this preview.");
       worker.terminate();
     };
-    worker.postMessage({ file, rotation, mirror, hull: faceMode });
+    worker.postMessage({ file, rotation, mirror, scale, hull: faceMode });
     return () => {
       worker.terminate();
       fileWorker.current = null;
     };
-  }, [file, rotation, mirror, faceMode]);
+  }, [file, rotation, mirror, scale, faceMode]);
 
   useEffect(() => {
     if (!host.current || !model) return;
@@ -655,18 +751,18 @@ export default function Preview({
   const dimensions = model?.min
     .map((value, i) => Number((model.max[i] - value).toFixed(1)))
     .join(" × ");
-  const seconds = preview?.time?.estimatedSeconds;
+  const seconds = preview?.time?.estimatedSeconds ?? quick?.bodySeconds;
   const time =
     seconds !== undefined
       ? formatPrintTime(seconds)
       : orienting
         ? "Waiting for orientation…"
-        : !fits
+        : !fits || tooSmall
           ? "Unavailable"
           : calculating ||
               reading ||
               profileLoading ||
-            (!message && !disabled)
+              (!message && !disabled && !tooSmall)
             ? calculationProgress === "finishing"
               ? "Finishing…"
               : calculationProgress === null
@@ -690,7 +786,7 @@ export default function Preview({
             type="button"
             role="tab"
             aria-selected={tab === "layers"}
-            disabled={!model || !profile || disabled}
+            disabled={!model || !profile || disabled || tooSmall}
             onClick={() => {
               setFaceMode(false);
               setTab("layers");
@@ -710,6 +806,9 @@ export default function Preview({
         <div className="print-time" aria-live="polite">
           <span>Print time:</span>
           <strong>{time}</strong>
+          {quick && !preview?.time && (
+            <span className="small muted">Quick estimate · model only</span>
+          )}
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
           )}
@@ -917,9 +1016,26 @@ export default function Preview({
           )}
         </p>
       )}
-      {tab === "layers" && calculating && (
+      {tab === "layers" && layerCalculating && (
         <p className="small" role="status">
-          Preparing layers…
+          {calculationProgress === "finishing"
+            ? "Finishing layers…"
+            : typeof calculationProgress === "number"
+              ? `Preparing layers… ${calculationProgress}%`
+              : "Preparing layers…"}
+        </p>
+      )}
+      {tooSmall && (
+        <p className="small unit-warning">
+          This file is smaller than 1 mm. Was it exported in meters?{" "}
+          <button
+            type="button"
+            className="text-button"
+            disabled={disabled}
+            onClick={onUseMeters}
+          >
+            Use meters
+          </button>
         </p>
       )}
       {message && (

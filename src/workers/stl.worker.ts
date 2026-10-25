@@ -13,11 +13,12 @@ self.onmessage = async ({
   file: File;
   rotation: number[];
   mirror: boolean;
+  scale?: number;
   hull?: boolean;
 }>) => {
   try {
-    const { file, rotation, mirror, hull } = data;
-    const matrix = poseMatrix(rotation, mirror);
+    const { file, rotation, mirror, hull, scale = 1 } = data;
+    const matrix = poseMatrix(rotation, mirror, scale);
     const rotated = {
       min: [Infinity, Infinity, Infinity],
       max: [-Infinity, -Infinity, -Infinity],

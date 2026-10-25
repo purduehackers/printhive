@@ -8,10 +8,15 @@ import { parseSTL } from '../lib/stl';
 
 self.onmessage = async ({
   data,
-}: MessageEvent<{ file: File; rotation?: number[]; mirror: boolean }>) => {
+}: MessageEvent<{
+  file: File;
+  rotation?: number[];
+  mirror: boolean;
+  scale?: number;
+}>) => {
   try {
-    const { file, rotation, mirror } = data;
-    const matrix = poseMatrix(rotation, mirror);
+    const { file, rotation, mirror, scale = 1 } = data;
+    const matrix = poseMatrix(rotation, mirror, scale);
     const bounds = {
       min: [Infinity, Infinity, Infinity],
       max: [-Infinity, -Infinity, -Infinity],
