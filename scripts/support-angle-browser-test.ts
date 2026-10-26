@@ -2,7 +2,7 @@ import { chromium, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { startHarness } from '../tests/harness';
 
-// A bar leaning at 45 degrees. It needs no support at 30 degrees, but does at 80.
+// A bar leaning at 45 degrees. Regular supports are empty at the Core ONE default 35 degrees, but present at 80.
 const points = [
   [0, 0, 0],
   [5, 0, 0],
@@ -97,6 +97,9 @@ try {
       .getByLabel('STL file', { exact: true })
       .setInputFiles({ name, mimeType: 'application/octet-stream', buffer });
   await page.goto(h.origin + '/submit');
+  await page
+    .getByRole('combobox', { name: 'Default supports', exact: true })
+    .selectOption('normal');
   await add('lean-a.stl');
   await ready();
   await expect(
@@ -129,6 +132,20 @@ try {
       (window as unknown as { vertices: number[] }).vertices.at(-1),
     ),
   ).toBeGreaterThan(0);
+  // Orca's imported tree settings also support this bar at the default angle.
+  // Keep empty-state coverage on regular supports and verify explicit tree generation separately.
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('tree');
+  await ready();
+  await expect(notice).toHaveCount(0);
+  await expect(
+    page.getByRole('slider', { name: 'Layer', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('combobox', { name: 'Supports', exact: true })
+    .selectOption('normal');
+  await ready();
   const before = await page.evaluate(
     () => (window as unknown as { angles: unknown[] }).angles.length,
   );

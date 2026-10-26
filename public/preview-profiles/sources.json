@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/OrcaSlicer/OrcaSlicer",
+  "revision": "8500fcdccaa10b5099ac20d252af3a7c560046f1",
+  "license": "AGPL-3.0-only",
+  "runtimeSha256": "eb087ba40ca355ebd94759d25e6767d58005b2264fbc55db9fd42400c4c911e6",
+  "profiles": [
+    {
+      "file": "core-one.json",
+      "vendor": "Prusa",
+      "printerId": "prusa-core-one-plus",
+      "machine": "Prusa CORE One 0.4 nozzle",
+      "process": "0.20mm SPEED @CORE One 0.4",
+      "filament": "Prusa Generic PLA @CORE One",
+      "label": "Prusa Core ONE+ / Generic PLA / 0.4 mm",
+      "bed": [
+        250,
+        220,
+        270
+      ],
+      "omitted": [
+        "adaptive_layer_height",
+        "bed_type",
+        "before_layer_change_gcode",
+        "change_filament_gcode",
+        "compatible_printers",
+        "compatible_printers_condition",
+        "default_filament_profile",
+        "default_print_profile",
+        "emit_machine_limits_to_gcode",
+        "filament_end_gcode",
+        "filament_id",
+        "filament_notes",
+        "filament_settings_id",
+        "filament_start_gcode",
+        "from",
+        "gcode_comments",
+        "gcode_flavor",
+        "gcode_label_objects",
+        "host_type",
+        "inherits",
+        "instantiation",
+        "layer_change_gcode",
+        "machine_end_gcode",
+        "machine_pause_gcode",
+        "machine_start_gcode",
+        "name",
+        "print_settings_id",
+        "printer_notes",
+        "printer_settings_id",
+        "setting_id",
+        "thumbnails",
+        "tree_support_branch_diameter_double_wall",
+        "tree_support_with_infill",
+        "type"
+      ]
+    },
+    {
+      "file": "h2d.json",
+      "vendor": "BBL",
+      "printerId": "bambu-h2d",
+      "machine": "Bambu Lab H2D 0.4 nozzle",
+      "process": "0.20mm Standard @BBL H2D",
+      "filament": "Generic PLA @BBL H2D",
+      "label": "Bambu H2D / Generic PLA / 0.4 mm",
+      "bed": [
+        325,
+        320,
+        325
+      ],
+      "omitted": [
+        "adaptive_layer_height",
+        "apply_top_surface_compensation",
+        "bottom_color_penetration_layers",
+        "change_filament_gcode",
+        "circle_compensation_manual_offset",
+        "circle_compensation_speed",
+        "compatible_printers",
+        "compatible_printers_condition",
+        "counter_coef_1",
+        "counter_coef_2",
+        "counter_coef_3",
+        "counter_limit_max",
+        "counter_limit_min",
+        "default_filament_profile",
+        "default_nozzle_volume_type",
+        "default_print_profile",
+        "description",
+        "detect_floating_vertical_shell",
+        "diameter_limit",
+        "enable_circle_compensation",
+        "enable_height_slowdown",
+        "enable_pre_heating",
+        "extruder_clearance_dist_to_rod",
+        "filament_end_gcode",
+        "filament_id",
+        "filament_long_retractions_when_ec",
+        "filament_pre_cooling_temperature",
+        "filament_prime_volume",
+        "filament_ramming_travel_time",
+        "filament_ramming_volumetric_speed",
+        "filament_retraction_distances_when_ec",
+        "filament_scarf_gap",
+        "filament_scarf_height",
+        "filament_scarf_length",
+        "filament_scarf_seam_type",
+        "filament_settings_id",
+        "filament_start_gcode",
+        "filament_velocity_adaptation_factor",
+        "from",
+        "gcode_flavor",
+        "hole_coef_1",
+        "hole_coef_2",
+        "hole_coef_3",
+        "hole_limit_max",
+        "hole_limit_min",
+        "hotend_cooling_rate",
+        "hotend_heating_rate",
+        "impact_strength_z",
+        "infill_rotate_step",
+        "inherits",
+        "instantiation",
+        "internal_bridge_support_thickness",
+        "layer_change_gcode",
+        "layer_time_smoothing",
+        "layer_time_smoothing_threshold",
+        "locked_skeleton_infill_pattern",
+        "locked_skin_infill_pattern",
+        "machine_end_gcode",
+        "machine_pause_gcode",
+        "machine_prepare_compensation_time",
+        "machine_start_gcode",
+        "name",
+        "overhang_totally_speed",
+        "override_filament_scarf_seam_setting",
+        "pre_start_fan_time",
+        "prime_tower_lift_height",
+        "prime_tower_lift_speed",
+        "prime_tower_max_speed",
+        "print_settings_id",
+        "printer_settings_id",
+        "seam_placement_away_from_overhangs",
+        "seam_slope_gap",
+        "setting_id",
+        "silent_mode",
+        "slowdown_end_acc",
+        "slowdown_end_height",
+        "slowdown_end_speed",
+        "slowdown_start_acc",
+        "slowdown_start_height",
+        "slowdown_start_speed",
+        "smooth_coefficient",
+        "time_lapse_gcode",
+        "top_color_penetration_layers",
+        "type",
+        "vertical_shell_speed",
+        "wrapping_detection_gcode",
+        "z_direction_outwall_speed_continuous"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "path": "resources/profiles/BBL/filament/fdm_filament_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/fdm_filament_common.json",
+      "sha256": "05725cc129f96ea903dc77c40d248fa1bd0137cfc41216d09d952cfdd37d3683"
+    },
+    {
+      "path": "resources/profiles/BBL/filament/fdm_filament_pla.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/fdm_filament_pla.json",
+      "sha256": "79f257ca32c8a938f49df82623cc84ca86d1044a818d600714b024e6b6499642"
+    },
+    {
+      "path": "resources/profiles/BBL/filament/Generic PLA @base.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/Generic%20PLA%20%40base.json",
+      "sha256": "85ebc04bd25c236322547d6d95f5a074ce4cab53cf975392e1f6b2c1fb74d406"
+    },
+    {
+      "path": "resources/profiles/BBL/filament/Generic PLA @BBL H2D.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/Generic%20PLA%20%40BBL%20H2D.json",
+      "sha256": "1987bd23d9efca5557d97eba6a05e95d616ae211a7820f7ab93f8a603910077b"
+    },
+    {
+      "path": "resources/profiles/BBL/machine/Bambu Lab H2D 0.4 nozzle.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/machine/Bambu%20Lab%20H2D%200.4%20nozzle.json",
+      "sha256": "f901504c1a8e9ae0e87a7520ee018268c31a369888cd381f7bd044603ef9a010"
+    },
+    {
+      "path": "resources/profiles/BBL/machine/fdm_bbl_3dp_002_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/machine/fdm_bbl_3dp_002_common.json",
+      "sha256": "e64be7b87c6624d16327fa1f02e8f8a66acc4f4a9976b6c2c3bb122a3939bdb8"
+    },
+    {
+      "path": "resources/profiles/BBL/machine/fdm_machine_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/machine/fdm_machine_common.json",
+      "sha256": "cdcaa5e5061934a9b960c94e203cc7d1e3b869a407182644f2dda9fdcbf5c2b3"
+    },
+    {
+      "path": "resources/profiles/BBL/process/0.20mm Standard @BBL H2D.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/0.20mm%20Standard%20%40BBL%20H2D.json",
+      "sha256": "4afdb9b77b89ce734441081f8b0c9f6cc8c317b8bf5689ec3cdda52b3c7f0bba"
+    },
+    {
+      "path": "resources/profiles/BBL/process/fdm_process_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/fdm_process_common.json",
+      "sha256": "398fcb322a7f459edab00cb2daf524345a19b8cef074415af52f377f91e4bd5b"
+    },
+    {
+      "path": "resources/profiles/BBL/process/fdm_process_dual_0.20_nozzle_0.4.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/fdm_process_dual_0.20_nozzle_0.4.json",
+      "sha256": "575dee2b5317f12b1a0563b95e4dbb532988a71568b00ad59431e6b111777158"
+    },
+    {
+      "path": "resources/profiles/BBL/process/fdm_process_dual_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/fdm_process_dual_common.json",
+      "sha256": "a10450bf727a6fd5db84c49a3e1537d5becbcdb74ce61d73e11664dc8cb9d264"
+    },
+    {
+      "path": "resources/profiles/Prusa/filament/fdm_filament_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/filament/fdm_filament_common.json",
+      "sha256": "2a0f65f43fd868552ece3c2b94978175265fadc81464faf61301b528a82191ab"
+    },
+    {
+      "path": "resources/profiles/Prusa/filament/fdm_filament_pla.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/filament/fdm_filament_pla.json",
+      "sha256": "4874a8ef80673066489fcbcd02479a7f92a5ec91b2af543fc4203e15c9661170"
+    },
+    {
+      "path": "resources/profiles/Prusa/filament/Prusa Generic PLA @CORE One.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/filament/Prusa%20Generic%20PLA%20%40CORE%20One.json",
+      "sha256": "547ee7455e5539455b2cce0d3c726cb37b7f48702d644c29383974e95eeae84e"
+    },
+    {
+      "path": "resources/profiles/Prusa/machine/fdm_machine_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/machine/fdm_machine_common.json",
+      "sha256": "425414a679781f78a9d0f861b167cb136e4e5a2d1b6bc214b38ae1b9e0e1b86b"
+    },
+    {
+      "path": "resources/profiles/Prusa/machine/Prusa CORE One 0.4 nozzle.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/machine/Prusa%20CORE%20One%200.4%20nozzle.json",
+      "sha256": "70cad41119b0529b095dcc73681e4e59b97bae0cc0b2486a9678610c7078ee65"
+    },
+    {
+      "path": "resources/profiles/Prusa/machine/Prusa CORE One HF 0.4 nozzle.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/machine/Prusa%20CORE%20One%20HF%200.4%20nozzle.json",
+      "sha256": "6413cc19082b4dbbea11268fa8a0bb91e47017f1156a3198ef9bee9b755eabdb"
+    },
+    {
+      "path": "resources/profiles/Prusa/process/0.20mm SPEED @CORE One 0.4.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/process/0.20mm%20SPEED%20%40CORE%20One%200.4.json",
+      "sha256": "0535b02ad235dd7822c91ba97497afff6924190c123b8dad8b196bff1a874fea"
+    },
+    {
+      "path": "resources/profiles/Prusa/process/0.20mm SPEED @MK4S 0.4.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/process/0.20mm%20SPEED%20%40MK4S%200.4.json",
+      "sha256": "b722652bfdeca771ee712269d86a36a3b11bbc7ca2bc9bd8afab3693e2760b9c"
+    },
+    {
+      "path": "resources/profiles/Prusa/process/fdm_process_common.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/process/fdm_process_common.json",
+      "sha256": "72184f456c503296cbcda276326515dced3788bdcc672ae13d3a2294fe41a693"
+    },
+    {
+      "path": "resources/profiles/Prusa/process/process_common_mk4s.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/Prusa/process/process_common_mk4s.json",
+      "sha256": "272997fffbac9ad107ad55cd1082957792ffd6b87f4368f3c603933dd01dd316"
+    }
+  ]
+}

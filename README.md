@@ -133,7 +133,7 @@ Estimates remain per copy, not combined-plate or queue durations.
 The engine is source-built and bundled with the independently reusable browser package.
 No native/server estimator installation or server slicing/cache service is required.
 Inventory material names do not automatically resolve production filament profiles;
-the separate printer JSON files still declare starter machine/filament assumptions; they are editable but are not tuned production presets. See [configuration, precedence and selection](docs/preview-settings.md).
+the separate printer JSON files use resolved Orca 2.4.2 stock 0.4 mm / Generic PLA presets for Core ONE and H2D. They remain editable; physical timing is not calibrated. See [configuration, precedence and selection](docs/preview-settings.md).
 Browser limits remain different from desktop Orca. Integrity uses Web Crypto or the same
 SHA-256 fallback on ordinary HTTP development addresses.
 
@@ -157,7 +157,7 @@ Per-printer configuration and invalid-scale recovery pass 72 unit checks (430 as
 
 
 Per-model More settings includes an optional support overhang angle (whole degrees,
-0–90). Blank uses the printer profile's default; Orca starts at 30°. The angle affects
+0–90). Blank uses the printer profile's default: 35° for Core ONE, 30° for H2D. The angle affects
 both generated supports and the shared time estimate, and is saved with each part.
 A prominent No supports needed notice appears after successful empty generation in
 either view. Migration 005 preserves older submissions and their history, adding only

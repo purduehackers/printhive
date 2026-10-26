@@ -172,9 +172,62 @@ try {
   await expect(
     page.getByRole('heading', { name: 'Check your email', exact: true }),
   ).toBeVisible();
+  // Exercise the shipped upstream profiles without the operator-edit route overrides.
+  await page.unroute('**/preview-profiles/*.json');
+  for (const [name, buffer, file, printer] of [
+    [
+      'stock-core.stl',
+      Buffer.from(source),
+      'core-one.json',
+      'For Prusa Core ONE+',
+    ],
+    ['stock-h2d.stl', large, 'h2d.json', 'For Bambu H2D'],
+  ] as const) {
+    const shipped = JSON.parse(
+      await readFile(
+        new URL('../public/preview-profiles/' + file, import.meta.url),
+        'utf8',
+      ),
+    );
+    for (const support of ['none', 'tree', 'normal']) {
+      await page.goto(h.origin + '/submit');
+      await page
+        .getByRole('combobox', { name: 'Default supports', exact: true })
+        .selectOption(support);
+      await add(name, buffer);
+      await ready();
+      await expect(page.getByLabel('Estimate printer')).toHaveText(printer);
+      const actual = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              requestedProfiles: Array<{
+                configuration: Record<string, unknown>;
+              }>;
+            }
+          ).requestedProfiles.at(-1)!.configuration,
+      );
+      expect(actual.outer_wall_speed).toEqual(
+        shipped.configuration.outer_wall_speed,
+      );
+      expect(actual.filament_max_volumetric_speed).toEqual(
+        shipped.configuration.filament_max_volumetric_speed,
+      );
+      if (support === 'none')
+        await expect(
+          page.getByRole('tab', { name: 'Supports', exact: true }),
+        ).toBeDisabled();
+      else {
+        await page.getByRole('tab', { name: 'Supports', exact: true }).click();
+        await expect(
+          page.getByText(/Layer \d+ \/ \d+|No supports needed/),
+        ).toBeVisible({ timeout: 45000 });
+      }
+    }
+  }
   expect(errors).toEqual([]);
   console.log(
-    'Per-printer JSON edits, actual worker configuration, Core ONE/H2D selection, cache reuse, profile failures and independent submission passed.',
+    'Per-printer JSON edits, actual worker configuration, Core ONE/H2D selection, cache reuse, profile failures, independent submission and all six shipped-profile/support combinations passed.',
   );
 } finally {
   await browser.close();
