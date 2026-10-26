@@ -1,6 +1,6 @@
-.global-settings{min-width:0;margin:0 0 24px;padding:16px;border:1px solid var(--line);border-radius:7px;background:#f4f5ed}
-.global-settings>legend{padding:0 6px;font-size:.95rem;font-weight:600}
-.global-settings>p{margin:0 0 16px}
+.default-settings{min-width:0;margin:0 0 24px;padding:16px;border:1px solid var(--line);border-radius:7px;background:#f4f5ed}
+.default-settings>legend{padding:0 6px;font-size:.95rem;font-weight:600}
+.default-settings>p{margin:0 0 16px}
 .part-settings-grid{gap:0 16px;min-width:0}
 .part-settings-grid>label,.part-settings-grid>.part-color-field{min-width:0}
 .part-color-field{position:relative}
@@ -22,5 +22,11 @@
 .mirror-switch:checked{background:var(--green);border-color:var(--green)}
 .mirror-switch:checked::before{transform:translateX(16px)}
 .mirror-switch:focus-visible{outline:3px solid #597d55;outline-offset:3px}
-@media(max-width:400px){.file-options .part-quick-control{padding:9px;font-size:.75rem}.part-quick-controls{gap:8px}.global-settings{padding:12px}.part-settings-grid{gap:0 12px}.file-settings .part-settings-grid{grid-template-columns:1fr}}
+@media(max-width:400px){.file-options .part-quick-control{padding:9px;font-size:.75rem}.part-quick-controls{gap:8px}.default-settings{padding:12px}.part-settings-grid{gap:0 12px}.file-settings .part-settings-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.mirror-switch::before{transition:none}}
+
+.batch-file-options .file-options{margin:0;padding:14px 12px;border:0;border-top:1px solid var(--line);border-radius:0;background:#f1f4e8}
+.batch-file-options .file-options>legend{padding:0;margin-bottom:12px;font-size:.7rem;color:var(--muted)}
+.file-options-chevron{font-size:1.3rem;line-height:1;color:var(--muted);flex-shrink:0;transform:rotate(0deg)}
+.batch-file-select[aria-expanded=true] .file-options-chevron{transform:rotate(90deg)}
+.batch-file-select .batch-file-details{flex:1}

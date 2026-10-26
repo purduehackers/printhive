@@ -186,6 +186,10 @@ export default function Preview({
     resultCache.current?.retain(retainedFiles);
   }, [retainedFiles]);
 
+  useEffect(() => {
+    if (supports === "none") setTab("model");
+  }, [supports]);
+
   function makeClient() {
     return createPreviewClient<File>({
       manifestUrl: new URL(
@@ -722,7 +726,7 @@ export default function Preview({
             type="button"
             role="tab"
             aria-selected={tab === "layers"}
-            disabled={!model || !profile || disabled || tooSmall}
+            disabled={supports === "none" || !model || !profile || disabled || tooSmall}
             onClick={() => {
               setFaceMode(false);
               setTab("layers");

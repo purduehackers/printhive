@@ -133,8 +133,8 @@ details[open] > summary .dropdown-chevron{transform:rotate(180deg)}
 /* Batch submission file list & batch confirmation */
 .batch-file-list{margin:-8px 0 20px;border:1px solid var(--line);border-radius:6px;background:#fcfcf9;overflow:hidden}
 .batch-file-list-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:#f3f4eb}
-.batch-file-list ul{list-style:none;margin:0;padding:0;max-height:240px;overflow-y:auto}
-.batch-file-list li{display:flex;align-items:center;border-bottom:1px solid var(--line);background:#ffffff}
+.batch-file-list ul{list-style:none;margin:0;padding:0;overflow:visible}
+.batch-file-list li{display:block;border-bottom:1px solid var(--line);background:#ffffff}
 .batch-file-list li:last-child{border-bottom:none}
 .batch-file-list li.active{background:#f1f4e6}
 .batch-file-select{flex:1;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:none;background:transparent;text-align:left;min-width:0;font-size:.82rem;color:var(--ink)}
@@ -150,3 +150,5 @@ details[open] > summary .dropdown-chevron{transform:rotate(180deg)}
 
 
 
+
+.batch-file-row{display:flex;align-items:center;min-width:0}

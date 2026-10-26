@@ -43,7 +43,7 @@ export default function PartSettingsFields({
   );
   const material = materials.find((item) => item.name === values.material)!;
   const accessible = (label: string) =>
-    local ? label : `Global ${label.toLowerCase()}`;
+    local ? label : `Default ${label.toLowerCase()}`;
   const change = <K extends keyof SharedPartSettings>(
     key: K,
     value: SharedPartSettings[K] | undefined,
@@ -76,7 +76,7 @@ export default function PartSettingsFields({
             )
           }
         >
-          {local && <option value="">Use global ({inheritedValue})</option>}
+          {local && <option value="">Use default ({inheritedValue})</option>}
           {options.map(([value, title]) => (
             <option key={value} value={value}>
               {title}
@@ -155,7 +155,7 @@ export default function PartSettingsFields({
         </span>
         {local && (
           <span className="setting-inheritance">
-            Blank uses global ({global.scalePercent}%)
+            Blank uses default ({global.scalePercent}%)
           </span>
         )}
       </label>

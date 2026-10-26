@@ -44,6 +44,8 @@ export default function SubmissionForm({
       : DEFAULT_MATERIALS;
   const [files, setFiles] = useState<File[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [fileOptionsOpen, setFileOptionsOpen] = useState(true);
+  const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
   const [orientations, setOrientations] = useState<Map<File, number[]>>(
     () => new Map(),
   );
@@ -183,7 +185,10 @@ export default function SubmissionForm({
         new Map([...current].filter(([file]) => merged.includes(file))),
     );
     setFiles(merged);
-    if (files.length === 0) setActiveIndex(0);
+    if (files.length === 0) {
+      setActiveIndex(0);
+      setFileOptionsOpen(true);
+    }
     setMessage('');
     e.target.value = '';
   }
@@ -397,6 +402,81 @@ export default function SubmissionForm({
       controllerRef.current = null;
     }
   }
+  const fileOptionsPanel = activeFile && (
+    <fieldset className="file-options" aria-label="Selected file options">
+      <legend>
+        Options for <strong>{activeFile.name}</strong>
+      </legend>
+      <div className="part-quick-controls">
+        <label className="part-quick-control">
+          <span>Copies</span>
+          <select
+            aria-label="Number of copies"
+            value={copies}
+            onChange={(event) =>
+              updateFileOptions({ copies: Number(event.target.value) })
+            }
+          >
+            {[1, 2, 3, 4, 5].map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="part-quick-control">
+          <span>
+            Mirror <small>X axis</small>
+          </span>
+          <input
+            className="mirror-switch"
+            type="checkbox"
+            role="switch"
+            aria-label="Mirror along the X axis"
+            checked={mirror}
+            onChange={(event) =>
+              updateFileOptions({ mirror: event.target.checked })
+            }
+          />
+        </label>
+      </div>
+      <details
+        className="file-settings"
+        open={moreSettingsOpen}
+        onToggle={(event) => setMoreSettingsOpen(event.currentTarget.open)}
+      >
+        <summary>More settings</summary>
+        <div className="file-settings-body">
+          <div className="part-override-heading">
+            <span className="small muted">Only changes for this part.</span>
+            <button
+              type="button"
+              className="text-button"
+              disabled={!Object.keys(activePart?.overrides ?? {}).length}
+              onClick={() =>
+                activeFile &&
+                setFileOptions((current) =>
+                  new Map(current).set(activeFile, {
+                    copies,
+                    mirror,
+                    overrides: {},
+                  }),
+                )
+              }
+            >
+              Reset to defaults
+            </button>
+          </div>
+          <PartSettingsFields
+            global={globalSettings}
+            overrides={activePart?.overrides ?? {}}
+            materials={materials}
+            onChange={updatePartSettings}
+          />
+        </div>
+      </details>
+    </fieldset>
+  );
   if (success)
     return (
       <section className="receipt">
@@ -461,17 +541,6 @@ export default function SubmissionForm({
               onChange={handleFileChange}
             />
           </label>
-          <fieldset className="global-settings" aria-label="Global settings">
-            <legend>Global settings</legend>
-            <p className="small muted">
-              Applies to every part unless changed below.
-            </p>
-            <PartSettingsFields
-              global={globalSettings}
-              materials={materials}
-              onChange={updateGlobalSettings}
-            />
-          </fieldset>
           {files.length > 0 && (
             <div className="batch-file-list" aria-label="Selected STL files">
               <div className="batch-file-list-header">
@@ -501,120 +570,75 @@ export default function SubmissionForm({
                     key={`${f.name}-${i}`}
                     className={i === activeIndex ? 'active' : ''}
                   >
-                    <button
-                      type="button"
-                      className="batch-file-select"
-                      onClick={() => setActiveIndex(i)}
-                      aria-pressed={i === activeIndex}
-                    >
-                      <span className="batch-file-details">
-                        <span className="batch-file-name">{f.name}</span>
-                        <span className="batch-file-options-summary">
-                          {fileOptions.get(f)?.copies ?? 1}{' '}
-                          {(fileOptions.get(f)?.copies ?? 1) === 1
-                            ? 'copy'
-                            : 'copies'}
-                          {fileOptions.get(f)?.mirror && ' · Mirrored'}
-                          {Object.keys(fileOptions.get(f)?.overrides ?? {})
-                            .length > 0 && ' · Custom settings'}
-                          {i === activeIndex && ' · Previewing'}
+                    <div className="batch-file-row">
+                      <button
+                        type="button"
+                        className="batch-file-select"
+                        onClick={() => {
+                          setFileOptionsOpen(
+                            i === activeIndex ? !fileOptionsOpen : true,
+                          );
+                          setActiveIndex(i);
+                        }}
+                        aria-expanded={i === activeIndex && fileOptionsOpen}
+                        aria-controls={`file-options-${i}`}
+                        aria-pressed={i === activeIndex}
+                      >
+                        <span className="batch-file-details">
+                          <span className="batch-file-name">{f.name}</span>
+                          <span className="batch-file-options-summary">
+                            {fileOptions.get(f)?.copies ?? 1}{' '}
+                            {(fileOptions.get(f)?.copies ?? 1) === 1
+                              ? 'copy'
+                              : 'copies'}
+                            {fileOptions.get(f)?.mirror && ' · Mirrored'}
+                            {Object.keys(fileOptions.get(f)?.overrides ?? {})
+                              .length > 0 && ' · Custom settings'}
+                            {i === activeIndex && ' · Previewing'}
+                          </span>
                         </span>
-                      </span>
-                      <span className="batch-file-size mono">
-                        {(f.size / 1024 ** 2).toFixed(2)} MiB
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="batch-file-remove"
-                      aria-label={`Remove ${f.name}`}
-                      onClick={() => removeFileAt(i)}
+                        <span className="batch-file-size mono">
+                          {(f.size / 1024 ** 2).toFixed(2)} MiB
+                        </span>
+                        <span
+                          className="file-options-chevron"
+                          aria-hidden="true"
+                        >
+                          ›
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="batch-file-remove"
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() => removeFileAt(i)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div
+                      id={`file-options-${i}`}
+                      className="batch-file-options"
+                      hidden={i !== activeIndex || !fileOptionsOpen}
                     >
-                      ×
-                    </button>
+                      {i === activeIndex && fileOptionsPanel}
+                    </div>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          {activeFile && (
-            <fieldset
-              className="file-options"
-              aria-label="Selected file options"
-            >
-              <legend>
-                Options for <strong>{activeFile.name}</strong>
-              </legend>
-              <div className="part-quick-controls">
-                <label className="part-quick-control">
-                  <span>Copies</span>
-                  <select
-                    aria-label="Number of copies"
-                    value={copies}
-                    onChange={(event) =>
-                      updateFileOptions({ copies: Number(event.target.value) })
-                    }
-                  >
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="part-quick-control">
-                  <span>
-                    Mirror <small>X axis</small>
-                  </span>
-                  <input
-                    className="mirror-switch"
-                    type="checkbox"
-                    role="switch"
-                    aria-label="Mirror along the X axis"
-                    checked={mirror}
-                    onChange={(event) =>
-                      updateFileOptions({ mirror: event.target.checked })
-                    }
-                  />
-                </label>
-              </div>
-              <details className="file-settings">
-                <summary>More settings</summary>
-                <div className="file-settings-body">
-                  <div className="part-override-heading">
-                    <span className="small muted">
-                      Only changes for this part.
-                    </span>
-                    <button
-                      type="button"
-                      className="text-button"
-                      disabled={
-                        !Object.keys(activePart?.overrides ?? {}).length
-                      }
-                      onClick={() =>
-                        activeFile &&
-                        setFileOptions((current) =>
-                          new Map(current).set(activeFile, {
-                            copies,
-                            mirror,
-                            overrides: {},
-                          }),
-                        )
-                      }
-                    >
-                      Reset to global
-                    </button>
-                  </div>
-                  <PartSettingsFields
-                    global={globalSettings}
-                    overrides={activePart?.overrides ?? {}}
-                    materials={materials}
-                    onChange={updatePartSettings}
-                  />
-                </div>
-              </details>
-            </fieldset>
-          )}
+          <fieldset className="default-settings" aria-label="Default settings">
+            <legend>Default settings</legend>
+            <p className="small muted">
+              Used for all files unless a file has its own settings.
+            </p>
+            <PartSettingsFields
+              global={globalSettings}
+              materials={materials}
+              onChange={updateGlobalSettings}
+            />
+          </fieldset>
           <label>
             Notes for the operator <span className="optional">Optional</span>
             <textarea

@@ -60,34 +60,49 @@ try {
     await expect(page.locator('.preview-file')).toContainText(`${name}.stl`);
   };
   await page.goto(h.origin + '/submit');
-  await setting('Global infill').selectOption('30');
+  await setting('Default infill').selectOption('30');
   await page
-    .getByRole('spinbutton', { name: 'Global scale (%)', exact: true })
+    .getByRole('spinbutton', { name: 'Default scale (%)', exact: true })
     .fill('150');
   const buffer = await readFile(
     new URL('../tests/support-bracket.stl', import.meta.url),
   );
   const addFile = (name: string) =>
-    page
-      .getByLabel('STL file', { exact: true })
-      .setInputFiles({
-        name: `${name}.stl`,
-        mimeType: 'application/octet-stream',
-        buffer,
-      });
+    page.getByLabel('STL file', { exact: true }).setInputFiles({
+      name: `${name}.stl`,
+      mimeType: 'application/octet-stream',
+      buffer,
+    });
   await addFile('first');
   await expect(
     page.getByText('45 × 15 × 36 mm', { exact: true }),
   ).toBeVisible();
+  const firstRow = page.locator('.batch-file-list li').first();
+  const firstButton = firstRow.getByRole('button', { name: /^first\.stl/ });
+  await expect(firstButton).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    firstRow.locator('.batch-file-row + .batch-file-options .file-options'),
+  ).toBeVisible();
+  await firstButton.click();
+  await expect(firstButton).toHaveAttribute('aria-expanded', 'false');
+  await expect(firstRow.locator('.batch-file-options')).toBeHidden();
+  await expect(page.locator('.preview-file')).toContainText('first.stl');
+  await firstButton.press('Enter');
+  await expect(firstRow.locator('.file-options')).toBeVisible();
+  const rowsBox = await page.locator('.batch-file-list').boundingBox();
+  const defaultsBox = await page
+    .getByRole('group', { name: 'Default settings', exact: true })
+    .boundingBox();
+  expect(defaultsBox!.y).toBeGreaterThanOrEqual(rowsBox!.y + rowsBox!.height);
   await page.getByText('More settings', { exact: true }).click();
   await expect(setting('Infill')).toHaveValue('');
   await setting('Infill').selectOption('30'); // An explicit override equal to global remains explicit.
   await page
     .getByRole('spinbutton', { name: 'Scale (%)', exact: true })
     .fill('200');
-  await setting('Global infill').selectOption('50');
+  await setting('Default infill').selectOption('50');
   await page
-    .getByRole('spinbutton', { name: 'Global scale (%)', exact: true })
+    .getByRole('spinbutton', { name: 'Default scale (%)', exact: true })
     .fill('125');
   await expect(setting('Infill')).toHaveValue('30');
   await expect(
@@ -96,6 +111,10 @@ try {
   await ready();
   await addFile('second'); // A newly added file inherits the latest globals.
   await choose('second');
+  await expect(firstRow.locator('.batch-file-options')).toBeHidden();
+  await expect(
+    page.locator('.batch-file-list li').nth(1).locator('.file-options'),
+  ).toBeVisible();
   await expect(setting('Infill')).toHaveValue('');
   await expect(
     page.getByText('37.5 × 12.5 × 30 mm', { exact: true }),
@@ -113,17 +132,31 @@ try {
   ).toBeVisible();
   expect(await tasks()).toBe(completed);
   await setting('Supports').selectOption('none');
+  const supportsTab = page.getByRole('tab', { name: 'Supports', exact: true });
+  await expect(supportsTab).toBeDisabled();
+  await expect(supportsTab).toHaveCSS('cursor', 'not-allowed');
+  await expect(
+    page.getByRole('tab', { name: 'Model', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(
+    page.getByRole('slider', { name: 'Layer', exact: true }),
+  ).toHaveCount(0);
+  await page
+    .locator('.preview-panel')
+    .screenshot({ path: 'test-results/supports-disabled.png' });
   await ready();
   expect(await tasks()).toBe(completed + 1);
   await setting('Supports').selectOption('');
   await ready();
   expect(await tasks()).toBe(completed + 1); // Prior support shapes restored without slicing.
+  await expect(supportsTab).toBeEnabled();
+  await supportsTab.click();
   await page.getByLabel('Number of copies').selectOption('3');
   expect(await tasks()).toBe(completed + 1);
   await page.getByLabel('Mirror along the X axis').check();
   await ready();
   await page
-    .getByRole('button', { name: 'Reset to global', exact: true })
+    .getByRole('button', { name: 'Reset to defaults', exact: true })
     .click();
   await expect(setting('Infill')).toHaveValue('');
   await expect(
@@ -141,7 +174,7 @@ try {
   await ready();
   await mkdir('test-results', { recursive: true });
   await page.screenshot({
-    path: 'test-results/global-settings-desktop.png',
+    path: 'test-results/default-settings-desktop.png',
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -151,13 +184,13 @@ try {
     ),
   ).toBe(true);
   await page.screenshot({
-    path: 'test-results/global-settings-mobile.png',
+    path: 'test-results/default-settings-mobile.png',
     fullPage: true,
   });
   expect(writes).toEqual([]);
   await page
     .getByLabel('Project / part title')
-    .fill('Global and local scale test');
+    .fill('Default and local scale test');
   await page.getByLabel('Purdue email').fill('settings@purdue.edu');
   await page
     .getByRole('button', { name: 'Send confirmation email', exact: true })
@@ -191,7 +224,7 @@ try {
   }
   expect(errors).toEqual([]);
   console.log(
-    'Global inheritance, per-field overrides, scale/export, mobile layout and completed file/settings cache reuse passed.',
+    'Default inheritance, per-field overrides, scale/export, mobile layout and completed file/settings cache reuse passed.',
   );
 } finally {
   await browser.close();

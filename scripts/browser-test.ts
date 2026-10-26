@@ -154,10 +154,8 @@ try {
   await page
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('none');
-  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
-  await expect(page.getByText('Supports are turned off.')).toBeVisible({
-    timeout: 45000,
-  });
+  await expect(page.getByRole('tab', { name: 'Supports', exact: true })).toBeDisabled();
+  await expect(page.getByRole('tab', { name: 'Model', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(
     page.getByRole('button', { name: 'Supports', exact: true }),
   ).toHaveCount(0);
