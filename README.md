@@ -154,3 +154,11 @@ claim. The source library records its narrower engine comparisons separately.
 Default settings and page-local result reuse pass 71 unit checks (409 assertions), type checking, the production build and both browser flows. The settings flow observes real fast_shapes worker requests: switching files and restoring previous support settings starts no additional task, while changed support settings regenerate. It also verifies inherited values for newly added parts, explicit overrides, reset behavior, scaled saved-STL dimensions and desktop/mobile layout.
 
 Per-printer configuration and invalid-scale recovery pass 72 unit checks (430 assertions), type checking, the production build, HTTP/SMTP checks and desktop/mobile browser flows, including the supplied meter-exported case. The form reveals invalid scales before native validation tries to focus hidden inputs; required title/email checks remain active.
+
+
+Per-model More settings includes an optional support overhang angle (whole degrees,
+0–90). Blank uses the printer profile's default; Orca starts at 30°. The angle affects
+both generated supports and the shared time estimate, and is saved with each part.
+A prominent No supports needed notice appears after successful empty generation in
+either view. Migration 005 preserves older submissions and their history, adding only
+a nullable angle field. See [support settings and compatibility](docs/preview-settings.md#per-model-support-angle-and-older-submissions).

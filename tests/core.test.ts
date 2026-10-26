@@ -45,6 +45,13 @@ describe('validation and bounded STL parsing', () => {
   test('defaults match requested print settings and email normalizes', () => {
     expect(metadata(submission({ email: 'Test@PURDUE.EDU' }))).toMatchObject({ email: 'test@purdue.edu', infill: 15, layer_height: 0.2, supports: 'operator', color: 'black', copies: 1, mirror: 0 });
   });
+  test('single submissions preserve explicit zero angles and omitted legacy defaults', async () => {
+    const explicit = await reserve(submission({ support_angle: 0 }));
+    const legacy = await reserve(submission());
+    const sql = await db();
+    expect((await sql`SELECT support_angle FROM jobs WHERE id=${explicit.id}`)[0].support_angle).toBe(0);
+    expect((await sql`SELECT support_angle FROM jobs WHERE id=${legacy.id}`)[0].support_angle).toBeNull();
+  });
   test('rejects wrong domains, bounds, and unsupported settings', () => {
     for (const overrides of [{ email: 'test@cs.purdue.edu' }, { email: 'test@purdue.edu.evil.com' }, { title: 'x'.repeat(201) }, { notes: 'x'.repeat(5001) }, { infill: 40 }, { mirror: true }, { copies: 6 }, { color: 'blue' }, { file_size: MAX_FILE_BYTES + 1 }, { original_filename: '../bad.stl' }]) expect(() => metadata(submission(overrides))).toThrow();
     expect(metadata(submission({ file_size: MAX_FILE_BYTES })).file_size).toBe(MAX_FILE_BYTES);
@@ -103,7 +110,8 @@ describe('authenticated links and confirmation', () => {
   });
   test('public queue contains no email, notes, filenames or storage references', async () => {
     await queued(); const [job] = await publicQueue();
-    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version'].sort());
+    expect(job.support_angle).toBeNull();
+    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'support_angle', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version'].sort());
   });
 });
 describe('upload and delivery failure semantics', () => {

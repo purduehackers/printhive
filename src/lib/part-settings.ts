@@ -7,6 +7,7 @@ export interface SharedPartSettings {
   infill: number;
   layerHeight: number;
   supports: string;
+  supportAngle: string;
   units: ModelUnits;
   scalePercent: string;
 }
@@ -24,6 +25,7 @@ export function defaultPartSettings(materials: Material[]): SharedPartSettings {
     infill: 15,
     layerHeight: 0.2,
     supports: 'operator',
+    supportAngle: '',
     units: 'mm',
     scalePercent: '100',
   };
@@ -84,4 +86,15 @@ export function partScale(settings: SharedPartSettings): number | null {
   )
     return null;
   return (UNIT_SCALES[settings.units] * percent) / 100;
+}
+
+/** Blank inherits the printer profile; Orca's typed default is 30 degrees.
+ * Zero intentionally retains Orca's automatic/overlap behavior.
+ */
+export function partSupportAngle(
+  settings: SharedPartSettings,
+): number | undefined | null {
+  if (!settings.supportAngle?.trim()) return undefined;
+  const angle = Number(settings.supportAngle);
+  return Number.isInteger(angle) && angle >= 0 && angle <= 90 ? angle : null;
 }

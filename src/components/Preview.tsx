@@ -58,6 +58,7 @@ interface Props {
   infill: number;
   layerHeight: number;
   supports: string;
+  supportAngle?: number;
   rotation: number[];
   onRotationChange: (rotation: number[]) => void;
   onUseMeters: () => void;
@@ -76,6 +77,7 @@ export default function Preview({
   infill,
   layerHeight,
   supports,
+  supportAngle,
   rotation,
   onRotationChange,
   onUseMeters,
@@ -220,6 +222,7 @@ export default function Preview({
     infill,
     layerHeight,
     supports,
+    supportAngle,
     settingsValid,
   ]);
 
@@ -297,7 +300,11 @@ export default function Preview({
       setCalculating(false);
       return;
     }
-    const effectiveProfile = profileForPreviewBed(profile, printer);
+    const effectiveProfile = profileForPreviewBed(
+      profile,
+      printer,
+      supportAngle,
+    );
     const key = cacheRuntime
       ? previewCacheKey(cacheRuntime.key, effectiveProfile, {
           rotation,
@@ -398,6 +405,7 @@ export default function Preview({
     infill,
     layerHeight,
     supports,
+    supportAngle,
     orienting,
     disabled,
     retry,
@@ -737,7 +745,9 @@ export default function Preview({
   }, [preview, model]);
 
   useEffect(() => {
-    const layered = tab === "layers" && Boolean(preview?.layers.length);
+    const layered =
+      tab === "layers" &&
+      Boolean(preview?.shapes.length && preview?.layers.length);
     if (meshRef.current) {
       meshRef.current.visible = true;
       const material = meshRef.current.material;
@@ -762,10 +772,19 @@ export default function Preview({
     render.current();
   }, [preview, model, tab, layerIndex]);
 
-  const layered = tab === "layers" && Boolean(preview?.layers.length);
+  const layered =
+    tab === "layers" &&
+    Boolean(preview?.shapes.length && preview?.layers.length);
   const dimensions = model?.min
     .map((value, i) => Number((model.max[i] - value).toFixed(1)))
     .join(" × ");
+  const noSupportsNeeded =
+    modelReady &&
+    preview &&
+    supports !== "none" &&
+    preview.shapes.length === 0 &&
+    !calculating &&
+    settingsValid;
   const seconds = preview?.estimatedSeconds;
   const time =
     seconds !== undefined
@@ -832,6 +851,17 @@ export default function Preview({
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
           )}
+        </div>
+      )}
+      {noSupportsNeeded && (
+        <div className="support-result" role="status">
+          <span className="support-result-icon" aria-hidden="true">
+            ✓
+          </span>
+          <div>
+            <strong>No supports needed</strong>
+            <p>None were generated for this orientation and these settings.</p>
+          </div>
         </div>
       )}
       {file && (
@@ -1006,13 +1036,6 @@ export default function Preview({
             : typeof calculationProgress === "number"
               ? `Preparing supports… ${calculationProgress}%`
               : "Preparing supports…"}
-        </p>
-      )}
-      {tab === "layers" && preview && preview.shapes.length === 0 && (
-        <p className="small">
-          {supports === "none"
-            ? "Supports are turned off."
-            : "No supports needed."}
         </p>
       )}
       {tooSmall && (

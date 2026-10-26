@@ -738,7 +738,7 @@ try {
     { timeout: 45000 },
   );
   await httpPage.getByRole('tab', { name: 'Supports', exact: true }).click();
-  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed\./)).toBeVisible({
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed/)).toBeVisible({
     timeout: 45000,
   });
   await httpPage.getByRole('button', { name: 'Auto', exact: true }).click();
@@ -747,7 +747,7 @@ try {
   ).toBeEnabled({ timeout: 45000 });
   await expect(httpPage.getByText('30 × 10 × 24 mm')).toHaveCount(0);
   await httpPage.getByRole('tab', { name: 'Supports', exact: true }).click();
-  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed\./)).toBeVisible({
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed/)).toBeVisible({
     timeout: 45000,
   });
   const bracketText = await readFile(

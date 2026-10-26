@@ -14,6 +14,7 @@ import {
   normalizePartOverrides,
   resolvePartSettings,
   partScale,
+  partSupportAngle,
   type SharedPartSettings,
   type PartOptions,
 } from '../lib/part-settings';
@@ -85,6 +86,9 @@ export default function SubmissionForm({
     units,
   } = activeOptions;
   const activeScale = partScale(activeOptions);
+  const activeSupportAngle = partSupportAngle(activeOptions);
+  const activeSettingsValid =
+    activeScale !== null && activeSupportAngle !== null;
   const currentMat = materials.find((item) => item.name === material)!;
   const availableColors = currentMat.colors;
 
@@ -277,6 +281,18 @@ export default function SubmissionForm({
       );
       return;
     }
+    const invalidAngle = settings.findIndex(
+      (value) => partSupportAngle(value) === null,
+    );
+    if (invalidAngle !== -1) {
+      setActiveIndex(invalidAngle);
+      setFileOptionsOpen(true);
+      setMoreSettingsOpen(true);
+      setMessage(
+        `Enter a whole-number support angle from 0° to 90° for ${files[invalidAngle].name}.`,
+      );
+      return;
+    }
     // Check all parts first so an invalid field can be revealed before native
     // title/email/default-setting validation tries to focus a hidden control.
     if (!event.currentTarget.reportValidity()) return;
@@ -321,6 +337,7 @@ export default function SubmissionForm({
             color: selected.color,
             layer_height: selected.layerHeight,
             supports: selected.supports,
+            support_angle: partSupportAngle(selected) ?? null,
             copies: selected.copies,
             mirror: 0,
           }),
@@ -361,6 +378,7 @@ export default function SubmissionForm({
               infill: settings[index].infill,
               layer_height: settings[index].layerHeight,
               supports: settings[index].supports,
+              support_angle: partSupportAngle(settings[index]) ?? null,
             })),
           }),
         });
@@ -736,15 +754,16 @@ export default function SubmissionForm({
             mirror={mirror}
             copies={copies}
             scale={activeScale ?? 1}
-            settingsValid={activeScale !== null}
+            settingsValid={activeSettingsValid}
             modelUnits={units}
             retainedFiles={files}
             onUseMeters={() => updatePartSettings({ units: 'm' })}
             infill={infill}
             layerHeight={layerHeight}
             supports={supports}
+            supportAngle={activeSupportAngle ?? undefined}
             rotation={activeRotation}
-            disabled={busy || activeScale === null}
+            disabled={busy || !activeSettingsValid}
             onRotationChange={(rotation) => {
               if (activeFile)
                 setOrientations((current) =>

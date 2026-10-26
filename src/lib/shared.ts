@@ -13,7 +13,7 @@ export const transitions: Record<Status, Status[]> = {
   completed: ['queued'], canceled: ['queued'], failed: ['queued'], rejected: ['queued'],
 };
 export interface PrintSettings {
-  infill: number; material: string; color: string; layer_height: number; supports: string; copies: number; mirror: number;
+  infill: number; material: string; color: string; layer_height: number; supports: string; support_angle?: number | null; copies: number; mirror: number;
 }
 export interface MaterialColor {
   id: number;

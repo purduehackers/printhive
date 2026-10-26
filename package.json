@@ -10,7 +10,7 @@
     "start": "bun scripts/preflight.ts && bun run db:migrate && bun dist/server/entry.mjs",
     "test": "bun test tests",
     "test:e2e": "bun scripts/e2e.ts",
-    "test:browser": "bun scripts/browser-test.ts && bun scripts/settings-browser-test.ts && bun scripts/profile-browser-test.ts",
+    "test:browser": "bun scripts/browser-test.ts && bun scripts/settings-browser-test.ts && bun scripts/profile-browser-test.ts && bun scripts/support-angle-browser-test.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "operator:add": "bun scripts/operator.ts",
     "cleanup": "bun scripts/cleanup.ts",

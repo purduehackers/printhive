@@ -50,7 +50,7 @@ export default function PartSettingsFields({
   ) => onChange({ [key]: value } as Partial<SharedPartSettings>);
 
   function select(
-    key: Exclude<keyof SharedPartSettings, 'scalePercent'>,
+    key: Exclude<keyof SharedPartSettings, 'scalePercent' | 'supportAngle'>,
     label: string,
     options: Array<[string | number, string]>,
     inheritedLabel?: string,
@@ -126,6 +126,29 @@ export default function PartSettingsFields({
         'supports',
         'Supports',
         SUPPORTS.map((value) => [value, supportLabel(value)]),
+      )}
+      {local && (
+        <label>
+          Support overhang angle
+          <span className="percent-input">
+            <input
+              aria-label="Support overhang angle (°)"
+              type="number"
+              min="0"
+              max="90"
+              step="1"
+              placeholder="Default"
+              value={overrides.supportAngle ?? ''}
+              onChange={(event) =>
+                change('supportAngle', event.target.value || undefined)
+              }
+            />
+            <span aria-hidden="true">°</span>
+          </span>
+          <span className="setting-inheritance">
+            Higher angles add more support. Blank uses printer default.
+          </span>
+        </label>
       )}
       {select('units', 'Model units', [
         ['mm', 'Millimeters (mm)'],

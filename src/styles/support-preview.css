@@ -44,3 +44,7 @@
 .batch-file-list li.active{box-shadow:inset 3px 0 var(--green)}.batch-file-list li.active .batch-file-name{color:var(--green);font-weight:700}
 
 .file-settings{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}.file-settings>summary{cursor:pointer;font-size:.8rem;font-weight:600}.file-settings-body{padding-top:18px}.file-settings-body .color-options{margin-bottom:0}.unit-warning{border:1px solid #dcb99c;background:#f5e8d9;padding:12px;border-radius:5px;line-height:1.6}.file-settings-body .field-grid{gap:0 16px}
+
+.support-result{display:flex;align-items:flex-start;gap:10px;margin:0 0 16px;padding:13px;border:1px solid #aac09c;border-radius:6px;background:#e5efdf;color:#345439}
+.support-result strong{font-size:.87rem}.support-result p{margin:4px 0 0;font-size:.72rem;line-height:1.5;color:#53684c}
+.support-result-icon{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#406549;color:white;font-size:.85rem}

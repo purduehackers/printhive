@@ -52,7 +52,8 @@ print-body estimate; startup and finish time are excluded.
 1. The selected printer's JSON provides the engine configuration.
 2. The physical bed limits are set from PrintHive's fleet definitions.
 3. The form's effective layer height, infill and support choice override those
-   entries. A file's explicit settings take precedence over Default settings.
+   entries. A per-model support overhang angle, when supplied, overrides the
+   profile's `support_threshold_angle`; a blank angle leaves it unchanged. A file's explicit settings take precedence over Default settings.
 
 Thus editing a speed, acceleration, cooling or support geometry option in JSON
 changes the engine input, while the form still owns its visible choices.
@@ -98,3 +99,34 @@ or physical accuracy. It does show that the former 10-second supplied-file test
 limit also fails for the previous settings under these conditions. Those two
 functional assertions now use the existing 45-second preview timeout; they are
 not latency benchmarks.
+
+
+## Per-model support angle and older submissions
+
+More settings offers a support overhang angle in whole degrees from 0 through 90.
+Blank uses the selected printer profile; Orca 2.4.2's typed default is 30°.
+Higher angles generate support under more overhangs. Orca measures the slope from
+horizontal. Zero retains Orca's special behavior: regular supports use the overlap
+threshold; tree supports use their 30° fallback. These semantics were checked in
+the pinned PrintConfig.cpp and regular/tree support implementations on 26 October 2026.
+
+The angle is applied to the same combined support-shape/time task, and the effective
+configuration is part of the preview cache key. It does not trigger a second slice.
+A completed result with no support shapes displays a prominent **No supports needed**
+notice in either view, with no empty layer slider. Supports switched off is a separate
+state and never produces that notice.
+
+Migration 005 adds a nullable `support_angle` column with a 0–90 integer constraint.
+It does not rebuild or delete rows. Older submissions retain their settings, file
+references, statuses and event history; NULL means printer default. Old API clients
+can omit the field. New single/batch submissions accept an integer or NULL; an
+explicit NULL in a batch item clears any batch-level angle. Operators see the saved
+angle or Printer default. Run normal startup migrations before serving the new code.
+
+Migration checks cover old submissions in every status, session/operator retention,
+indexes and foreign keys, and repeat migration execution. The browser check uses a
+45° leaning bar: the default 30° needs no supports, while 80° generates them with
+both tree and regular supports. It checks file isolation, cached return to default,
+invalid-input recovery and the saved operator instructions.
+
+Support-angle integration passes 76 unit checks (472 assertions), type checking, the production build, the HTTP/SMTP flow and all four desktop/mobile browser flows, including the supplied key case.

@@ -83,17 +83,28 @@ export function selectPreviewPrinter(dimensions: number[]): PrinterSpec {
   return fitsPreviewPrinter(dimensions, coreOne) ? coreOne : h2d;
 }
 
-/** Change physical bed limits only; speed/material settings remain operator-owned. */
+/** Apply physical bed limits and an optional per-part support threshold. */
 export function profileForPreviewBed(
   profile: PreviewProfile,
   printer: PrinterSpec,
+  supportAngle?: number,
 ): PreviewProfile {
+  if (
+    supportAngle !== undefined &&
+    (!Number.isInteger(supportAngle) || supportAngle < 0 || supportAngle > 90)
+  )
+    throw new Error(
+      'Support angle must be a whole number from 0 to 90 degrees.',
+    );
   const { x, y, z } = printer.buildVolume;
   return {
     ...profile,
     id: `${profile.id}:bed:${printer.id}`,
     configuration: {
       ...profile.configuration,
+      ...(supportAngle === undefined
+        ? {}
+        : { support_threshold_angle: String(supportAngle) }),
       printable_area: ['0x0', `${x}x0`, `${x}x${y}`, `0x${y}`],
       printable_height: String(z),
     },

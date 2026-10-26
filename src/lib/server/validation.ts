@@ -46,7 +46,11 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
     color = matchedMat.colors[0] ?? 'black';
   }
 
+  const supportAngle = d.support_angle ?? null;
+  invariant(supportAngle === null || (Number.isInteger(supportAngle) && Number(supportAngle) >= 0 && Number(supportAngle) <= 90),
+    400, 'Support angle must be a whole number from 0 to 90 degrees.');
   return {
+    support_angle: supportAngle as number | null,
     title, email, notes: string('notes', 5000, true), original_filename: filename,
     file_size: Number(d.file_size), infill: choice('infill', INFILLS, 15),
     material, color,
@@ -87,6 +91,7 @@ export function batchMetadata(input: unknown, allowedMaterials?: { name: string;
       color: item.color ?? d.color,
       layer_height: item.layer_height ?? d.layer_height,
       supports: item.supports ?? d.supports,
+      support_angle: item.support_angle === undefined ? d.support_angle : item.support_angle,
       copies: item.copies ?? d.copies,
       mirror: item.mirror ?? d.mirror,
     }, allowedMaterials);
