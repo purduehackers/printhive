@@ -12,6 +12,55 @@ const h2d: PrinterSpec = {
 };
 export const PREVIEW_PRINTERS = [coreOne, h2d];
 
+export const PREVIEW_PROFILE_FILES: Record<string, string> = {
+  'prusa-core-one-plus': '/preview-profiles/core-one.json',
+  'bambu-h2d': '/preview-profiles/h2d.json',
+};
+
+/** An effective configuration, not an unresolved desktop preset with parents. */
+export function parsePreviewProfile(
+  value: unknown,
+  printerId: string,
+): PreviewProfile {
+  const profile = value as
+    | (Partial<PreviewProfile> & { schemaVersion?: number; printerId?: string })
+    | null;
+  const config = profile?.configuration;
+  if (
+    !profile ||
+    profile.schemaVersion !== 1 ||
+    profile.printerId !== printerId ||
+    typeof profile.id !== 'string' ||
+    !profile.id.trim() ||
+    typeof profile.label !== 'string' ||
+    !profile.label.trim() ||
+    !config ||
+    typeof config !== 'object' ||
+    Array.isArray(config) ||
+    'inherits' in config ||
+    !Array.isArray(config.nozzle_diameter) ||
+    config.nozzle_diameter.length !== 1 ||
+    !Array.isArray(config.filament_diameter) ||
+    config.filament_diameter.length !== 1 ||
+    !Array.isArray(config.printable_area) ||
+    config.printable_area.length !== 4 ||
+    !Number.isFinite(Number(config.layer_height)) ||
+    Number(config.layer_height) <= 0 ||
+    !Number.isFinite(Number(config.printable_height)) ||
+    Number(config.printable_height) <= 0 ||
+    (config.support_style !== undefined && config.support_style !== 'default')
+  )
+    throw new Error(
+      'Use a resolved, single-nozzle preview profile with the default support style.',
+    );
+  return {
+    id: profile.id,
+    label: profile.label,
+    ...(typeof profile.basis === 'string' ? { basis: profile.basis } : {}),
+    configuration: config,
+  };
+}
+
 export function fitsPreviewPrinter(
   dimensions: number[],
   printer: PrinterSpec,

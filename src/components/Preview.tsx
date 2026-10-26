@@ -15,9 +15,15 @@ import {
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
 import { previewColor } from "../lib/shared";
-import { PreviewResultCache, previewCacheKey, runtimeCacheIdentity } from "../lib/preview-cache";
+import {
+  PreviewResultCache,
+  previewCacheKey,
+  runtimeCacheIdentity,
+} from "../lib/preview-cache";
 import {
   PREVIEW_PRINTERS,
+  PREVIEW_PROFILE_FILES,
+  parsePreviewProfile,
   selectPreviewPrinter,
   fitsPreviewPrinter,
   profileForPreviewBed,
@@ -58,7 +64,6 @@ interface Props {
   disabled?: boolean;
 }
 
-
 export default function Preview({
   file,
   retainedFiles,
@@ -81,7 +86,9 @@ export default function Preview({
   const client = useRef<PreviewClient<File> | null>(null);
   const resultCache = useRef<PreviewResultCache | null>(null);
   resultCache.current ??= new PreviewResultCache();
-  const [cacheRuntime, setCacheRuntime] = useState<ReturnType<typeof runtimeCacheIdentity> | null>();
+  const [cacheRuntime, setCacheRuntime] = useState<ReturnType<
+    typeof runtimeCacheIdentity
+  > | null>();
   const orientationClient = useRef<PreviewClient<File> | null>(null);
   const meshRef = useRef<THREE.Mesh<
     THREE.BufferGeometry,
@@ -95,7 +102,10 @@ export default function Preview({
   const faceAction = useRef<(normal: number[]) => void>(() => {});
   const faceModeRef = useRef(false);
   const [loadedModel, setModel] = useState<Model | null>(null);
-  const [profile, setProfile] = useState<PreviewProfile | null>(null);
+  const [profiles, setProfiles] = useState<Record<string, PreviewProfile>>({});
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>(
+    {},
+  );
   const [preview, setPreview] = useState<FastSupportPreview | null>(null);
   const [tab, setTab] = useState<"model" | "layers">("model");
   const [reading, setReading] = useState(false);
@@ -104,7 +114,6 @@ export default function Preview({
   const [calculationProgress, setCalculationProgress] = useState<
     number | "finishing" | null
   >(null);
-  const [profileLoading, setProfileLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [message, setMessage] = useState("");
   const [layerIndex, setLayerIndex] = useState(0);
@@ -122,6 +131,9 @@ export default function Preview({
   const printer = model
     ? selectPreviewPrinter(modelDimensions)
     : PREVIEW_PRINTERS[0];
+  const profile = profiles[printer.id] ?? null;
+  const profileError = profileErrors[printer.id];
+  const profileLoading = !profile && !profileError;
   const fits = model ? fitsPreviewPrinter(modelDimensions, printer) : true;
   const modelReady = Boolean(model);
   const tooSmall =
@@ -138,24 +150,16 @@ export default function Preview({
   useEffect(() => {
     const controller = new AbortController();
     fetch("/preview-engine/manifest.json", { signal: controller.signal })
-      .then(response => { if (!response.ok) throw new Error("Missing engine identity"); return response.json(); })
+      .then((response) => {
+        if (!response.ok) throw new Error("Missing engine identity");
+        return response.json();
+      })
       .then(runtimeCacheIdentity)
-      .then(identity => { if (!controller.signal.aborted) setCacheRuntime(identity); })
-      .catch(() => { if (!controller.signal.aborted) setCacheRuntime(null); });
-    fetch("/preview-profile.json", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Missing preview profile");
-        const value = await response.json();
-        if (!value.id || !value.configuration)
-          throw new Error("Invalid preview profile");
-        if (!controller.signal.aborted) setProfile(value);
+      .then((identity) => {
+        if (!controller.signal.aborted) setCacheRuntime(identity);
       })
       .catch(() => {
-        if (!controller.signal.aborted)
-          setMessage("Couldn't load print-time settings. Reload to try again.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setProfileLoading(false);
+        if (!controller.signal.aborted) setCacheRuntime(null);
       });
     return () => {
       controller.abort();
@@ -167,6 +171,39 @@ export default function Preview({
   }, []);
 
   useEffect(() => {
+    if (profiles[printer.id]) return;
+    const controller = new AbortController();
+    setProfileErrors((current) => {
+      const next = { ...current };
+      delete next[printer.id];
+      return next;
+    });
+    fetch(PREVIEW_PROFILE_FILES[printer.id], {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error(`Missing printer settings (${response.status})`);
+        return parsePreviewProfile(await response.json(), printer.id);
+      })
+      .then((value) => {
+        if (!controller.signal.aborted)
+          setProfiles((current) => ({ ...current, [printer.id]: value }));
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setProfileErrors((current) => ({
+            ...current,
+            [printer.id]: `Couldn't load slicer settings for ${printer.name}. Reload to try again.`,
+          }));
+      });
+    return () => controller.abort();
+    // Profiles are loaded once per printer for this page. Switching printers
+    // selects that printer's cached settings rather than a previous printer's.
+  }, [printer]);
+
+  useEffect(() => {
     revision.current++;
     client.current?.cancel();
     orientationClient.current?.cancel();
@@ -175,7 +212,16 @@ export default function Preview({
     setPreview(null);
     setOrienting(false);
     setMessage("");
-  }, [file, mirror, rotation, scale, infill, layerHeight, supports, settingsValid]);
+  }, [
+    file,
+    mirror,
+    rotation,
+    scale,
+    infill,
+    layerHeight,
+    supports,
+    settingsValid,
+  ]);
 
   useEffect(() => {
     setTab("model");
@@ -252,8 +298,16 @@ export default function Preview({
       return;
     }
     const effectiveProfile = profileForPreviewBed(profile, printer);
-    const key = cacheRuntime ? previewCacheKey(cacheRuntime.key, effectiveProfile,
-      { rotation, mirror, scale, infill, layerHeight, supports }) : null;
+    const key = cacheRuntime
+      ? previewCacheKey(cacheRuntime.key, effectiveProfile, {
+          rotation,
+          mirror,
+          scale,
+          infill,
+          layerHeight,
+          supports,
+        })
+      : null;
     const cached = key ? resultCache.current?.get(file, key) : undefined;
     if (cached) {
       setPreview({ ...cached });
@@ -267,29 +321,46 @@ export default function Preview({
     const timer = window.setTimeout(async () => {
       try {
         client.current ??= makeClient();
-        const result = await client.current.estimate({
-          input: file,
-          profile: effectiveProfile,
-          support:
-            supports === "none"
-              ? "none"
-              : supports === "normal"
-                ? "normal"
-                : "tree",
-          scope: "model_and_supports",
-          mirrorX: mirror,
-          rotation,
-          scale,
-          infill,
-          layerHeight,
-        }, { onProgress: (progress) => {
-          if (!active) return;
-          if (progress.stage === "extracting") setCalculationProgress("finishing");
-          else if (progress.stage === "generating" && Number.isFinite(progress.percent))
-            setCalculationProgress(current => Math.max(typeof current === "number" ? current : 0, Math.min(99, Math.round(progress.percent))));
-        }});
+        const result = await client.current.estimate(
+          {
+            input: file,
+            profile: effectiveProfile,
+            support:
+              supports === "none"
+                ? "none"
+                : supports === "normal"
+                  ? "normal"
+                  : "tree",
+            scope: "model_and_supports",
+            mirrorX: mirror,
+            rotation,
+            scale,
+            infill,
+            layerHeight,
+          },
+          {
+            onProgress: (progress) => {
+              if (!active) return;
+              if (progress.stage === "extracting")
+                setCalculationProgress("finishing");
+              else if (
+                progress.stage === "generating" &&
+                Number.isFinite(progress.percent)
+              )
+                setCalculationProgress((current) =>
+                  Math.max(
+                    typeof current === "number" ? current : 0,
+                    Math.min(99, Math.round(progress.percent)),
+                  ),
+                );
+            },
+          },
+        );
         if (active) {
-          if (key && result.provenance.runtimeSha256 === cacheRuntime?.wasmSha256)
+          if (
+            key &&
+            result.provenance.runtimeSha256 === cacheRuntime?.wasmSha256
+          )
             resultCache.current?.set(file, key, result);
           flushSync(() => {
             setPreview(result);
@@ -300,7 +371,9 @@ export default function Preview({
       } catch (error) {
         if (active && (error as { code?: string }).code !== "canceled")
           setMessage(
-            error instanceof Error ? error.message.slice(0, 200) : "Couldn't prepare this preview.",
+            error instanceof Error
+              ? error.message.slice(0, 200)
+              : "Couldn't prepare this preview.",
           );
       } finally {
         if (active) setCalculating(false);
@@ -329,7 +402,6 @@ export default function Preview({
     disabled,
     retry,
   ]);
-
 
   useEffect(() => {
     setReading(Boolean(file));
@@ -647,9 +719,12 @@ export default function Preview({
       model.min[2],
     );
     let overlay: SupportShapeOverlay;
-    try { overlay = createSupportShapeOverlay(preview); }
-    catch (error) {
-      setMessage(error instanceof Error ? error.message : "Couldn't display supports.");
+    try {
+      overlay = createSupportShapeOverlay(preview);
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Couldn't display supports.",
+      );
       render.current();
       return;
     }
@@ -697,12 +772,12 @@ export default function Preview({
       ? formatPrintTime(seconds)
       : orienting
         ? "Waiting for orientation…"
-        : !fits || tooSmall || !settingsValid
+        : !fits || tooSmall || !settingsValid || profileError
           ? "Unavailable"
           : calculating ||
               reading ||
               profileLoading ||
-              (!message && !disabled && !tooSmall)
+              (!message && !profileError && !disabled && !tooSmall)
             ? calculationProgress === "finishing"
               ? "Finishing…"
               : calculationProgress === null
@@ -726,7 +801,9 @@ export default function Preview({
             type="button"
             role="tab"
             aria-selected={tab === "layers"}
-            disabled={supports === "none" || !model || !profile || disabled || tooSmall}
+            disabled={
+              supports === "none" || !model || !profile || disabled || tooSmall
+            }
             onClick={() => {
               setFaceMode(false);
               setTab("layers");
@@ -746,9 +823,12 @@ export default function Preview({
         <div className="print-time" aria-live="polite">
           <span>Print time:</span>
           <strong>{time}</strong>
-          {preview && (
-            <span className="small muted">Quick estimate</span>
+          {model && (
+            <span className="small muted" aria-label="Estimate printer">
+              For {printer.name}
+            </span>
           )}
+          {preview && <span className="small muted">Quick estimate</span>}
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
           )}
@@ -830,9 +910,7 @@ export default function Preview({
           ref={host}
           role="img"
           aria-label={
-            layered
-              ? "Generated support shapes"
-              : "Interactive model preview"
+            layered ? "Generated support shapes" : "Interactive model preview"
           }
         >
           {!model && (
@@ -887,7 +965,6 @@ export default function Preview({
             <strong>
               Layer {layerIndex + 1} / {preview!.layers.length}
             </strong>
-
           </div>
         </div>
       )}
@@ -932,7 +1009,11 @@ export default function Preview({
         </p>
       )}
       {tab === "layers" && preview && preview.shapes.length === 0 && (
-        <p className="small">{supports === "none" ? "Supports are turned off." : "No supports needed."}</p>
+        <p className="small">
+          {supports === "none"
+            ? "Supports are turned off."
+            : "No supports needed."}
+        </p>
       )}
       {tooSmall && (
         <p className="small unit-warning">
@@ -947,9 +1028,9 @@ export default function Preview({
           </button>
         </p>
       )}
-      {message && (
+      {(message || profileError) && (
         <p className="small preview-message" role="status">
-          {message}{" "}
+          {message || profileError}{" "}
           {profile && !calculating && !orienting && fits && (
             <button
               type="button"

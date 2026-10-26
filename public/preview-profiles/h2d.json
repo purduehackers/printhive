@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "printerId": "bambu-h2d",
+  "id": "bambu-h2d-single-nozzle-pla-0.4-starter-v1",
+  "label": "Bambu H2D / PLA / 0.4 mm starter",
+  "basis": "Editable starter: Orca 2.4.2 typed engine defaults plus the overrides below. Not a tuned production preset or physical calibration.",
+  "configuration": {
+    "printer_technology": "FFF",
+    "printer_model": "Bambu Lab H2D",
+    "gcode_flavor": "bbl",
+    "nozzle_diameter": [
+      "0.4"
+    ],
+    "filament_diameter": [
+      "1.75"
+    ],
+    "filament_density": [
+      "1.24"
+    ],
+    "filament_type": [
+      "PLA"
+    ],
+    "printable_area": [
+      "0x0",
+      "325x0",
+      "325x320",
+      "0x320"
+    ],
+    "printable_height": "325",
+    "layer_height": "0.2",
+    "initial_layer_print_height": "0.2",
+    "use_relative_e_distances": "0",
+    "support_style": "default",
+    "support_threshold_angle": "30",
+    "machine_start_gcode": "",
+    "machine_end_gcode": "",
+    "filament_start_gcode": [
+      ""
+    ],
+    "filament_end_gcode": [
+      ""
+    ],
+    "enable_prime_tower": "0"
+  }
+}

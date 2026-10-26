@@ -11,12 +11,16 @@ try {
     viewport: { width: 1440, height: 1000 },
   });
   const errors: string[] = [];
+  const consoleErrors: string[] = [];
   const writes: string[] = [];
   const uploaded: string[] = [];
   let submitted:
     | { items: Array<{ infill: number; copies: number; supports: string }> }
     | undefined;
   page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
   page.on('request', (request) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method()))
       writes.push(request.url());
@@ -188,6 +192,47 @@ try {
     fullPage: true,
   });
   expect(writes).toEqual([]);
+  // Invalid settings must reveal their file even when its dropdown is closed
+  // or a different file is selected. Native title/email validation still applies.
+  await page.getByLabel('Project / part title').fill('Validation recovery');
+  await page.getByLabel('Purdue email').fill('settings@purdue.edu');
+  await page
+    .getByRole('spinbutton', { name: 'Scale (%)', exact: true })
+    .fill('0');
+  await page.getByRole('button', { name: /^first\.stl/ }).click();
+  await expect(page.locator('.file-options')).toBeHidden();
+  await page
+    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .click();
+  await expect(page.getByRole('alert')).toContainText('Enter a scale');
+  await expect(
+    page.getByRole('spinbutton', { name: 'Scale (%)', exact: true }),
+  ).toBeVisible();
+  await choose('second');
+  await page.getByRole('button', { name: /^second\.stl/ }).click();
+  await page
+    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .click();
+  await expect(page.locator('.preview-file')).toContainText('first.stl');
+  await expect(
+    page.getByRole('spinbutton', { name: 'Scale (%)', exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole('spinbutton', { name: 'Scale (%)', exact: true })
+    .fill('200');
+  await page.getByLabel('Project / part title').fill('');
+  await page
+    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .click();
+  await expect(page.getByLabel('Project / part title')).toBeFocused();
+  await page.getByLabel('Project / part title').fill('Validation recovery');
+  await page.getByLabel('Purdue email').fill('settings@example.test');
+  await page
+    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .click();
+  await expect(page.getByLabel('Purdue email')).toBeFocused();
+  expect(writes).toEqual([]);
+  expect(consoleErrors).toEqual([]);
   await page
     .getByLabel('Project / part title')
     .fill('Default and local scale test');

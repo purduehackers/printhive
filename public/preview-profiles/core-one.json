@@ -1,10 +1,12 @@
 {
-  "id": "illustrative-200mm-pla-0.4-orca-2.4.2",
-  "label": "Illustrative 200 mm / 0.4 mm / PLA",
-  "basis": "Orca 2.4.2 engine defaults with these declared overrides; not an operator production profile",
+  "schemaVersion": 1,
+  "printerId": "prusa-core-one-plus",
+  "id": "prusa-core-one-plus-pla-0.4-starter-v1",
+  "label": "Prusa Core ONE+ / PLA / 0.4 mm starter",
+  "basis": "Editable starter: Orca 2.4.2 typed engine defaults plus the overrides below. Not a tuned production preset or physical calibration.",
   "configuration": {
     "printer_technology": "FFF",
-    "printer_model": "",
+    "printer_model": "Prusa CORE One",
     "gcode_flavor": "marlin2",
     "nozzle_diameter": [
       "0.4"
@@ -20,11 +22,11 @@
     ],
     "printable_area": [
       "0x0",
-      "200x0",
-      "200x200",
-      "0x200"
+      "250x0",
+      "250x220",
+      "0x220"
     ],
-    "printable_height": "200",
+    "printable_height": "270",
     "layer_height": "0.2",
     "initial_layer_print_height": "0.2",
     "use_relative_e_distances": "0",

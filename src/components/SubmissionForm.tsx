@@ -270,11 +270,16 @@ export default function SubmissionForm({
     const invalid = settings.findIndex((value) => partScale(value) === null);
     if (invalid !== -1) {
       setActiveIndex(invalid);
+      setFileOptionsOpen(true);
+      setMoreSettingsOpen(true);
       setMessage(
         `Enter a scale between 0.01% and 10000% for ${files[invalid].name}.`,
       );
       return;
     }
+    // Check all parts first so an invalid field can be revealed before native
+    // title/email/default-setting validation tries to focus a hidden control.
+    if (!event.currentTarget.reportValidity()) return;
     const fields = new FormData(event.currentTarget);
     setBusy(true);
     setMessage('');
@@ -509,7 +514,7 @@ export default function SubmissionForm({
       </section>
     );
   return (
-    <form onSubmit={submit} className="submission-grid">
+    <form noValidate onSubmit={submit} className="submission-grid">
       <div>
         <fieldset disabled={busy} className="form-section">
           <legend>Part details</legend>

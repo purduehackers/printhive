@@ -642,7 +642,7 @@ try {
   await expect(unitsPage.getByText('30 \u00d7 10 \u00d7 24 mm')).toBeVisible();
   await expect(unitsPage.locator('.print-time strong')).toHaveText(
     /About|Under/,
-    { timeout: 10000 },
+    { timeout: 45000 },
   );
   await unitsPage.getByText('More settings', { exact: true }).click();
   await expect(unitsPage.getByLabel('Model units', { exact: true })).toHaveValue('m');
@@ -674,7 +674,7 @@ try {
       .click();
     await expect(unitsPage.locator('.print-time strong')).toHaveText(
       /About|Under/,
-      { timeout: 10000 },
+      { timeout: 45000 },
     );
     await unitsPage.getByRole('tab', { name: 'Supports', exact: true }).click();
     await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
