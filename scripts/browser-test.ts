@@ -64,7 +64,7 @@ try {
   ).toBeVisible();
   expect(nativeLoads).toBeGreaterThan(0);
   await page.getByText('More settings', { exact: true }).click();
-  await page.getByRole('radio', { name: 'yellow' }).check();
+  await page.getByRole('combobox', { name: 'Filament color', exact: true }).selectOption('yellow');
   await page.getByLabel('Mirror along the X axis').check();
   await page.getByLabel('Number of copies').selectOption('2');
   const previewUploads: string[] = [];
@@ -96,7 +96,7 @@ try {
   const canvas = await page.locator('.preview-viewport canvas').elementHandle();
   await expect(
     page.getByRole('combobox', { name: 'Supports', exact: true }),
-  ).toHaveValue('operator');
+  ).toHaveValue('');
   await expect(page.locator('.print-time strong')).toHaveText(/About|Under/);
   await expect(page.getByRole('button', { name: 'Walls', exact: true })).toHaveCount(0);
   await expect(page.locator('.feature-legend')).toHaveCount(0);
@@ -305,7 +305,7 @@ try {
   await page
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('none');
-  await page.getByRole('radio', { name: 'red', exact: true }).check();
+  await page.getByRole('combobox', { name: 'Filament color', exact: true }).selectOption('red');
   await page.getByRole('button', { name: 'Lay on face', exact: true }).click();
   await page.getByRole('button', { name: 'Front', exact: true }).click();
   await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
@@ -316,10 +316,10 @@ try {
   await page.getByLabel('Number of copies').selectOption('3');
   await expect(
     page.getByRole('combobox', { name: 'Infill', exact: true }),
-  ).toHaveValue('15');
+  ).toHaveValue('');
   await expect(
-    page.getByRole('radio', { name: 'black', exact: true }),
-  ).toBeChecked();
+    page.getByRole('combobox', { name: 'Filament color', exact: true }),
+  ).toHaveValue('');
   await expect(page.getByText('30 × 10 × 24 mm')).toBeVisible();
   await page.getByRole('button', { name: /^wheel_left\.stl/ }).click();
   await expect(page.getByLabel('Number of copies')).toHaveValue('2');
@@ -647,7 +647,7 @@ try {
     { timeout: 10000 },
   );
   await unitsPage.getByText('More settings', { exact: true }).click();
-  await expect(unitsPage.getByLabel('Model units')).toHaveValue('m');
+  await expect(unitsPage.getByLabel('Model units', { exact: true })).toHaveValue('m');
   await unitsPage.getByRole('tab', { name: 'Supports', exact: true }).click();
   await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,

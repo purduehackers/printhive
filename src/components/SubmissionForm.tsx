@@ -1,35 +1,23 @@
+import { lazy, Suspense, useRef, useState, type SubmitEvent } from 'react';
 import {
-  lazy,
-  Suspense,
-  useMemo,
-  useRef,
-  useState,
-  type SubmitEvent,
-} from 'react';
-import {
-  INFILLS,
-  LAYERS,
   MAX_BATCH_SIZE,
   MAX_FILE_BYTES,
-  SUPPORTS,
-  supportLabel,
   resolveColor,
   type Material,
 } from '../lib/shared';
 import { IDENTITY_ROTATION } from '@time-estimator/browser-preview/pose';
 import { prepareOrientedFile } from '../lib/oriented-file';
 const DEFAULT_ROTATION = [...IDENTITY_ROTATION];
-interface FileOptions {
-  copies: number;
-  mirror: boolean;
-  material: string;
-  color: string;
-  infill: number;
-  layerHeight: number;
-  supports: string;
-  units: string;
-}
-const UNIT_SCALES: Record<string, number> = { mm: 1, m: 1000, in: 25.4 };
+import PartSettingsFields from './PartSettingsFields';
+import {
+  defaultPartSettings,
+  normalizePartOverrides,
+  resolvePartSettings,
+  partScale,
+  type SharedPartSettings,
+  type PartOptions,
+} from '../lib/part-settings';
+import '../styles/part-settings.css';
 const Preview = lazy(() => import('./Preview'));
 
 const DEFAULT_MATERIALS: Material[] = [
@@ -60,20 +48,10 @@ export default function SubmissionForm({
     () => new Map(),
   );
   const [preparing, setPreparing] = useState(false);
-  const defaults = useMemo<FileOptions>(
-    () => ({
-      copies: 1,
-      mirror: false,
-      material: materials[0].name,
-      color: materials[0].colors[0]?.name ?? 'black',
-      infill: 15,
-      layerHeight: 0.2,
-      supports: 'operator',
-      units: 'mm',
-    }),
-    [materials],
+  const [globalSettings, setGlobalSettings] = useState<SharedPartSettings>(() =>
+    defaultPartSettings(materials),
   );
-  const [fileOptions, setFileOptions] = useState<Map<File, FileOptions>>(
+  const [fileOptions, setFileOptions] = useState<Map<File, PartOptions>>(
     () => new Map(),
   );
   const [busy, setBusy] = useState(false),
@@ -88,9 +66,12 @@ export default function SubmissionForm({
   const activeRotation = activeFile
     ? (orientations.get(activeFile) ?? DEFAULT_ROTATION)
     : DEFAULT_ROTATION;
-  const activeOptions = activeFile
-    ? (fileOptions.get(activeFile) ?? defaults)
-    : defaults;
+  const activePart = activeFile ? fileOptions.get(activeFile) : undefined;
+  const activeOptions = resolvePartSettings(
+    globalSettings,
+    activePart,
+    materials,
+  );
   const {
     copies,
     mirror,
@@ -101,37 +82,67 @@ export default function SubmissionForm({
     supports,
     units,
   } = activeOptions;
-  const scale = UNIT_SCALES[units];
-  const currentMat =
-    materials.find((m) => m.name.toLowerCase() === material.toLowerCase()) ??
-    materials[0];
-  const availableColors = currentMat?.colors ?? [];
+  const activeScale = partScale(activeOptions);
+  const currentMat = materials.find((item) => item.name === material)!;
+  const availableColors = currentMat.colors;
 
-  function updateFileOptions(change: Partial<FileOptions>) {
-    if (activeFile)
-      setFileOptions((current) =>
-        new Map(current).set(activeFile, {
-          ...(current.get(activeFile) ?? defaults),
-          ...change,
-        }),
-      );
+  function updateFileOptions(
+    change: Partial<Pick<PartOptions, 'copies' | 'mirror'>>,
+  ) {
+    if (!activeFile) return;
+    setFileOptions((current) =>
+      new Map(current).set(activeFile, {
+        copies: 1,
+        mirror: false,
+        overrides: {},
+        ...current.get(activeFile),
+        ...change,
+      }),
+    );
   }
 
-  function handleMaterialChange(nextName: string) {
-    const nextMat = materials.find(
-      (m) => m.name.toLowerCase() === nextName.toLowerCase(),
-    );
-    if (
-      nextMat &&
-      !nextMat.colors.some((c) => c.name.toLowerCase() === color.toLowerCase())
-    ) {
-      updateFileOptions({
-        material: nextName,
-        color: nextMat.colors[0]?.name ?? 'black',
+  function updatePartSettings(change: Partial<SharedPartSettings>) {
+    if (!activeFile) return;
+    setFileOptions((current) => {
+      const part = current.get(activeFile) ?? {
+        copies: 1,
+        mirror: false,
+        overrides: {},
+      };
+      const overrides = { ...part.overrides, ...change };
+      for (const key of Object.keys(overrides) as Array<
+        keyof SharedPartSettings
+      >)
+        if (overrides[key] === undefined) delete overrides[key];
+      return new Map(current).set(activeFile, {
+        ...part,
+        overrides: normalizePartOverrides(globalSettings, overrides, materials),
       });
-    } else {
-      updateFileOptions({ material: nextName });
-    }
+    });
+  }
+
+  function updateGlobalSettings(change: Partial<SharedPartSettings>) {
+    const next = { ...globalSettings, ...change };
+    const resolved = resolvePartSettings(next, undefined, materials);
+    next.material = resolved.material;
+    next.color = resolved.color;
+    setGlobalSettings(next);
+    setFileOptions(
+      (current) =>
+        new Map(
+          [...current].map(([file, part]) => [
+            file,
+            {
+              ...part,
+              overrides: normalizePartOverrides(
+                next,
+                part.overrides,
+                materials,
+              ),
+            },
+          ]),
+        ),
+    );
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -248,6 +259,17 @@ export default function SubmissionForm({
       setMessage(`Choose up to ${MAX_BATCH_SIZE} STL files per batch.`);
       return;
     }
+    const settings = files.map((file) =>
+      resolvePartSettings(globalSettings, fileOptions.get(file), materials),
+    );
+    const invalid = settings.findIndex((value) => partScale(value) === null);
+    if (invalid !== -1) {
+      setActiveIndex(invalid);
+      setMessage(
+        `Enter a scale between 0.01% and 10000% for ${files[invalid].name}.`,
+      );
+      return;
+    }
     const fields = new FormData(event.currentTarget);
     setBusy(true);
     setMessage('');
@@ -257,14 +279,14 @@ export default function SubmissionForm({
     try {
       setPreparing(true);
       const uploadFiles: File[] = [];
-      for (const file of files)
+      for (const [index, file] of files.entries())
         uploadFiles.push(
           await prepareOrientedFile(
             file,
             orientations.get(file),
-            fileOptions.get(file)?.mirror ?? false,
+            settings[index].mirror,
             controller.signal,
-            UNIT_SCALES[(fileOptions.get(file) ?? defaults).units],
+            partScale(settings[index])!,
           ),
         );
       if (uploadFiles.some((file) => file.size > MAX_FILE_BYTES))
@@ -273,6 +295,7 @@ export default function SubmissionForm({
       setPreparing(false);
       if (files.length === 1) {
         const singleFile = uploadFiles[0];
+        const selected = settings[0];
         const response = await fetch('/api/submissions', {
           method: 'POST',
           signal: controller.signal,
@@ -283,12 +306,12 @@ export default function SubmissionForm({
             notes: fields.get('notes'),
             original_filename: singleFile.name,
             file_size: singleFile.size,
-            infill: Number(fields.get('infill')),
-            material,
-            color,
-            layer_height: Number(fields.get('layer_height')),
-            supports: fields.get('supports'),
-            copies: fileOptions.get(files[0])?.copies ?? 1,
+            infill: selected.infill,
+            material: selected.material,
+            color: selected.color,
+            layer_height: selected.layerHeight,
+            supports: selected.supports,
+            copies: selected.copies,
             mirror: 0,
           }),
         });
@@ -313,22 +336,21 @@ export default function SubmissionForm({
             title: fields.get('title'),
             email: fields.get('email'),
             notes: fields.get('notes'),
-            infill: Number(fields.get('infill')),
-            material,
-            color,
-            layer_height: Number(fields.get('layer_height')),
-            supports: fields.get('supports'),
+            infill: globalSettings.infill,
+            material: globalSettings.material,
+            color: globalSettings.color,
+            layer_height: globalSettings.layerHeight,
+            supports: globalSettings.supports,
             mirror: 0,
             items: uploadFiles.map((f, index) => ({
               original_filename: f.name,
               file_size: f.size,
-              copies: (fileOptions.get(files[index]) ?? defaults).copies,
-              material: (fileOptions.get(files[index]) ?? defaults).material,
-              color: (fileOptions.get(files[index]) ?? defaults).color,
-              infill: (fileOptions.get(files[index]) ?? defaults).infill,
-              layer_height: (fileOptions.get(files[index]) ?? defaults)
-                .layerHeight,
-              supports: (fileOptions.get(files[index]) ?? defaults).supports,
+              copies: settings[index].copies,
+              material: settings[index].material,
+              color: settings[index].color,
+              infill: settings[index].infill,
+              layer_height: settings[index].layerHeight,
+              supports: settings[index].supports,
             })),
           }),
         });
@@ -439,6 +461,17 @@ export default function SubmissionForm({
               onChange={handleFileChange}
             />
           </label>
+          <fieldset className="global-settings" aria-label="Global settings">
+            <legend>Global settings</legend>
+            <p className="small muted">
+              Applies to every part unless changed below.
+            </p>
+            <PartSettingsFields
+              global={globalSettings}
+              materials={materials}
+              onChange={updateGlobalSettings}
+            />
+          </fieldset>
           {files.length > 0 && (
             <div className="batch-file-list" aria-label="Selected STL files">
               <div className="batch-file-list-header">
@@ -482,6 +515,8 @@ export default function SubmissionForm({
                             ? 'copy'
                             : 'copies'}
                           {fileOptions.get(f)?.mirror && ' · Mirrored'}
+                          {Object.keys(fileOptions.get(f)?.overrides ?? {})
+                            .length > 0 && ' · Custom settings'}
                           {i === activeIndex && ' · Previewing'}
                         </span>
                       </span>
@@ -510,11 +545,11 @@ export default function SubmissionForm({
               <legend>
                 Options for <strong>{activeFile.name}</strong>
               </legend>
-              <div className="file-options-controls">
-                <label>
-                  Number of copies
+              <div className="part-quick-controls">
+                <label className="part-quick-control">
+                  <span>Copies</span>
                   <select
-                    name="copies"
+                    aria-label="Number of copies"
                     value={copies}
                     onChange={(event) =>
                       updateFileOptions({ copies: Number(event.target.value) })
@@ -522,133 +557,60 @@ export default function SubmissionForm({
                   >
                     {[1, 2, 3, 4, 5].map((value) => (
                       <option key={value} value={value}>
-                        {value} {value === 1 ? 'copy' : 'copies'}
+                        {value}
                       </option>
                     ))}
                   </select>
                 </label>
-                <label className="checkbox-label">
+                <label className="part-quick-control">
+                  <span>
+                    Mirror <small>X axis</small>
+                  </span>
                   <input
+                    className="mirror-switch"
                     type="checkbox"
+                    role="switch"
+                    aria-label="Mirror along the X axis"
                     checked={mirror}
                     onChange={(event) =>
                       updateFileOptions({ mirror: event.target.checked })
                     }
                   />
-                  <span>Mirror along the X axis</span>
                 </label>
               </div>
               <details className="file-settings">
                 <summary>More settings</summary>
                 <div className="file-settings-body">
-                  <div className="field-grid">
-                    <label>
-                      Model units
-                      <select
-                        value={units}
-                        onChange={(event) =>
-                          updateFileOptions({ units: event.target.value })
-                        }
-                      >
-                        <option value="mm">Millimeters (mm)</option>
-                        <option value="m">Meters (m)</option>
-                        <option value="in">Inches (in)</option>
-                      </select>
-                    </label>
-                    <label>
-                      Material
-                      <select
-                        name="material"
-                        value={material}
-                        onChange={(e) => handleMaterialChange(e.target.value)}
-                      >
-                        {materials.map((m) => (
-                          <option key={m.name} value={m.name}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Infill
-                      <select
-                        name="infill"
-                        value={infill}
-                        onChange={(e) =>
-                          updateFileOptions({ infill: Number(e.target.value) })
-                        }
-                      >
-                        {INFILLS.map((v) => (
-                          <option key={v} value={v}>
-                            {v}%
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Layer height
-                      <select
-                        name="layer_height"
-                        value={layerHeight}
-                        onChange={(e) =>
-                          updateFileOptions({
-                            layerHeight: Number(e.target.value),
-                          })
-                        }
-                      >
-                        {LAYERS.map((v) => (
-                          <option key={v} value={v}>
-                            {v} mm
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Supports
-                      <select
-                        name="supports"
-                        value={supports}
-                        onChange={(e) =>
-                          updateFileOptions({ supports: e.target.value })
-                        }
-                      >
-                        {SUPPORTS.map((v) => (
-                          <option key={v} value={v}>
-                            {supportLabel(v)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <div className="part-override-heading">
+                    <span className="small muted">
+                      Only changes for this part.
+                    </span>
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={
+                        !Object.keys(activePart?.overrides ?? {}).length
+                      }
+                      onClick={() =>
+                        activeFile &&
+                        setFileOptions((current) =>
+                          new Map(current).set(activeFile, {
+                            copies,
+                            mirror,
+                            overrides: {},
+                          }),
+                        )
+                      }
+                    >
+                      Reset to global
+                    </button>
                   </div>
-                  <fieldset className="color-options">
-                    <legend>Filament color</legend>
-                    {availableColors.map((c) => {
-                      const isSelected =
-                        color.toLowerCase() === c.name.toLowerCase();
-                      const hex = resolveColor(c.name, c.code);
-                      return (
-                        <label
-                          className={isSelected ? 'selected' : ''}
-                          key={c.name}
-                        >
-                          <input
-                            type="radio"
-                            name="color"
-                            value={c.name}
-                            checked={isSelected}
-                            onChange={() =>
-                              updateFileOptions({ color: c.name })
-                            }
-                          />
-                          <i
-                            className={`swatch ${c.name.toLowerCase()}`}
-                            style={{ backgroundColor: hex }}
-                          />
-                          <span>{c.name}</span>
-                        </label>
-                      );
-                    })}
-                  </fieldset>
+                  <PartSettingsFields
+                    global={globalSettings}
+                    overrides={activePart?.overrides ?? {}}
+                    materials={materials}
+                    onChange={updatePartSettings}
+                  />
                 </div>
               </details>
             </fieldset>
@@ -744,13 +706,16 @@ export default function SubmissionForm({
             )}
             mirror={mirror}
             copies={copies}
-            scale={scale}
-            onUseMeters={() => updateFileOptions({ units: 'm' })}
+            scale={activeScale ?? 1}
+            settingsValid={activeScale !== null}
+            modelUnits={units}
+            retainedFiles={files}
+            onUseMeters={() => updatePartSettings({ units: 'm' })}
             infill={infill}
             layerHeight={layerHeight}
             supports={supports}
             rotation={activeRotation}
-            disabled={busy}
+            disabled={busy || activeScale === null}
             onRotationChange={(rotation) => {
               if (activeFile)
                 setOrientations((current) =>

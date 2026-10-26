@@ -15,6 +15,7 @@ import {
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
 import { previewColor } from "../lib/shared";
+import { PreviewResultCache, previewCacheKey, runtimeCacheIdentity } from "../lib/preview-cache";
 import {
   PREVIEW_PRINTERS,
   selectPreviewPrinter,
@@ -41,6 +42,9 @@ interface Model {
 }
 interface Props {
   file: File | null;
+  retainedFiles: File[];
+  modelUnits: string;
+  settingsValid: boolean;
   color: string;
   copies: number;
   mirror: boolean;
@@ -57,6 +61,9 @@ interface Props {
 
 export default function Preview({
   file,
+  retainedFiles,
+  modelUnits,
+  settingsValid,
   color,
   copies,
   mirror,
@@ -72,6 +79,9 @@ export default function Preview({
   const host = useRef<HTMLDivElement>(null);
   const fileWorker = useRef<Worker | null>(null);
   const client = useRef<PreviewClient<File> | null>(null);
+  const resultCache = useRef<PreviewResultCache | null>(null);
+  resultCache.current ??= new PreviewResultCache();
+  const [cacheRuntime, setCacheRuntime] = useState<ReturnType<typeof runtimeCacheIdentity> | null>();
   const orientationClient = useRef<PreviewClient<File> | null>(null);
   const meshRef = useRef<THREE.Mesh<
     THREE.BufferGeometry,
@@ -116,7 +126,7 @@ export default function Preview({
   const modelReady = Boolean(model);
   const tooSmall =
     modelReady &&
-    scale === 1 &&
+    modelUnits === "mm" &&
     Math.max(...modelDimensions) < 1 &&
     modelDimensions[2] < layerHeight / 2;
   faceModeRef.current = faceMode && !disabled;
@@ -127,6 +137,11 @@ export default function Preview({
 
   useEffect(() => {
     const controller = new AbortController();
+    fetch("/preview-engine/manifest.json", { signal: controller.signal })
+      .then(response => { if (!response.ok) throw new Error("Missing engine identity"); return response.json(); })
+      .then(runtimeCacheIdentity)
+      .then(identity => { if (!controller.signal.aborted) setCacheRuntime(identity); })
+      .catch(() => { if (!controller.signal.aborted) setCacheRuntime(null); });
     fetch("/preview-profile.json", { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Missing preview profile");
@@ -160,12 +175,16 @@ export default function Preview({
     setPreview(null);
     setOrienting(false);
     setMessage("");
-  }, [file, mirror, rotation, scale, infill, layerHeight, supports]);
+  }, [file, mirror, rotation, scale, infill, layerHeight, supports, settingsValid]);
 
   useEffect(() => {
     setTab("model");
     setFaceMode(false);
   }, [file]);
+
+  useEffect(() => {
+    resultCache.current?.retain(retainedFiles);
+  }, [retainedFiles]);
 
   function makeClient() {
     return createPreviewClient<File>({
@@ -217,6 +236,7 @@ export default function Preview({
   useEffect(() => {
     if (
       !file ||
+      cacheRuntime === undefined ||
       !profile ||
       !modelReady ||
       !fits ||
@@ -224,6 +244,16 @@ export default function Preview({
       orienting ||
       disabled
     ) {
+      setCalculating(false);
+      return;
+    }
+    const effectiveProfile = profileForPreviewBed(profile, printer);
+    const key = cacheRuntime ? previewCacheKey(cacheRuntime.key, effectiveProfile,
+      { rotation, mirror, scale, infill, layerHeight, supports }) : null;
+    const cached = key ? resultCache.current?.get(file, key) : undefined;
+    if (cached) {
+      setPreview({ ...cached });
+      setLayerIndex(Math.max(0, cached.layers.length - 1));
       setCalculating(false);
       return;
     }
@@ -235,7 +265,7 @@ export default function Preview({
         client.current ??= makeClient();
         const result = await client.current.estimate({
           input: file,
-          profile: profileForPreviewBed(profile, printer),
+          profile: effectiveProfile,
           support:
             supports === "none"
               ? "none"
@@ -254,12 +284,15 @@ export default function Preview({
           else if (progress.stage === "generating" && Number.isFinite(progress.percent))
             setCalculationProgress(current => Math.max(typeof current === "number" ? current : 0, Math.min(99, Math.round(progress.percent))));
         }});
-        if (active)
+        if (active) {
+          if (key && result.provenance.runtimeSha256 === cacheRuntime?.wasmSha256)
+            resultCache.current?.set(file, key, result);
           flushSync(() => {
             setPreview(result);
             setLayerIndex(Math.max(0, result.layers.length - 1));
             setCalculating(false);
           });
+        }
       } catch (error) {
         if (active && (error as { code?: string }).code !== "canceled")
           setMessage(
@@ -276,6 +309,7 @@ export default function Preview({
     };
   }, [
     file,
+    cacheRuntime,
     profile,
     modelReady,
     printer,
@@ -659,7 +693,7 @@ export default function Preview({
       ? formatPrintTime(seconds)
       : orienting
         ? "Waiting for orientation…"
-        : !fits || tooSmall
+        : !fits || tooSmall || !settingsValid
           ? "Unavailable"
           : calculating ||
               reading ||
