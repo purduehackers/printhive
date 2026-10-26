@@ -60,9 +60,9 @@ try {
     page.getByRole('tab', { name: 'Model', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await expect(
-    page.getByText('Quick estimate \u00b7 model only'),
+    page.getByText('Quick estimate'),
   ).toBeVisible();
-  expect(nativeLoads).toBe(0);
+  expect(nativeLoads).toBeGreaterThan(0);
   await page.getByText('More settings', { exact: true }).click();
   await page.getByRole('radio', { name: 'yellow' }).check();
   await page.getByLabel('Mirror along the X axis').check();
@@ -87,23 +87,19 @@ try {
   await page
     .locator('.preview-panel')
     .screenshot({ path: 'test-results/background-print-time.png' });
-  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
   await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
-  expect(nativeLoads).toBe(completedLoads + 1);
-  await expect(page.getByText(/Quick estimate/)).toHaveCount(0);
+  expect(nativeLoads).toBe(completedLoads);
+  await expect(page.getByText(/Quick estimate/)).toBeVisible();
   const canvas = await page.locator('.preview-viewport canvas').elementHandle();
   await expect(
     page.getByRole('combobox', { name: 'Supports', exact: true }),
   ).toHaveValue('operator');
   await expect(page.locator('.print-time strong')).toHaveText(/About|Under/);
-  await expect(
-    page.getByRole('button', { name: 'Walls', exact: true }),
-  ).toHaveAttribute('aria-pressed', 'true');
-  await expect(
-    page.getByRole('button', { name: 'Supports', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Walls', exact: true })).toHaveCount(0);
+  await expect(page.locator('.feature-legend')).toHaveCount(0);
   await expect(
     page.getByText(/triangles|physically calibrated|Model opacity/),
   ).toHaveCount(0);
@@ -120,7 +116,6 @@ try {
     .screenshot({ path: 'test-results/gcode-preview-panel.png' });
   await page.getByRole('slider', { name: 'Layer', exact: true }).press('Home');
   await expect(page.getByText(/Layer 1 \/ \d+/)).toBeVisible();
-  await page.getByLabel('Only this layer').check();
   await expect(
     page.getByRole('slider', { name: 'Layer progress', exact: true }),
   ).toHaveCount(0);
@@ -130,14 +125,10 @@ try {
   await expect(page.getByText('Preview settings', { exact: true })).toHaveCount(
     0,
   );
-  await page.getByLabel('Only this layer').uncheck();
   await page.getByRole('slider', { name: 'Layer', exact: true }).press('End');
-  await page.getByRole('button', { name: 'Walls', exact: true }).click();
-  await expect(
-    page.getByRole('button', { name: 'Walls', exact: true }),
-  ).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: 'Walls', exact: true })).toHaveCount(0);
   await page.getByRole('tab', { name: 'Model', exact: true }).click();
-  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
   expect(await canvas?.evaluate((element) => element.isConnected)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
@@ -152,33 +143,29 @@ try {
   await page
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('normal');
-  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
   await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
-  await expect(
-    page.getByRole('button', { name: 'Supports', exact: true }),
-  ).toBeVisible();
+  await expect(page.locator('.feature-legend')).toHaveCount(0);
   await page
     .locator('.preview-panel')
     .screenshot({ path: 'test-results/regular-supports-panel.png' });
   await page
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('none');
-  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
-  await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
+  await expect(page.getByText('Supports are turned off.')).toBeVisible({
     timeout: 45000,
   });
   await expect(
     page.getByRole('button', { name: 'Supports', exact: true }),
   ).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { name: 'Walls', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Walls', exact: true })).toHaveCount(0);
   await page
     .getByRole('combobox', { name: 'Supports', exact: true })
     .selectOption('operator');
-  await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await page.getByRole('tab', { name: 'Supports', exact: true }).click();
   await page.getByRole('button', { name: 'Auto', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Auto', exact: true }),
@@ -577,7 +564,7 @@ try {
     await page
       .getByLabel('STL file', { exact: true })
       .setInputFiles(process.env.PREVIEW_SMOKE_MODEL);
-    await page.getByRole('tab', { name: 'Layers', exact: true }).click();
+    await page.getByRole('tab', { name: 'Supports', exact: true }).click();
     await expect(page.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
       timeout: 300000,
     });
@@ -591,8 +578,7 @@ try {
     await page
       .locator('.preview-panel')
       .screenshot({ path: 'test-results/large-model-cutaway.png' });
-    await page.getByLabel('Only this layer').check();
-    await page
+      await page
       .locator('.preview-panel')
       .screenshot({ path: 'test-results/large-model-layer.png' });
     expect(previewPosts).toEqual([]);
@@ -662,7 +648,7 @@ try {
   );
   await unitsPage.getByText('More settings', { exact: true }).click();
   await expect(unitsPage.getByLabel('Model units')).toHaveValue('m');
-  await unitsPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+  await unitsPage.getByRole('tab', { name: 'Supports', exact: true }).click();
   await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
     timeout: 45000,
   });
@@ -692,7 +678,7 @@ try {
       /About|Under/,
       { timeout: 10000 },
     );
-    await unitsPage.getByRole('tab', { name: 'Layers', exact: true }).click();
+    await unitsPage.getByRole('tab', { name: 'Supports', exact: true }).click();
     await expect(unitsPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
       timeout: 45000,
     });
@@ -753,8 +739,8 @@ try {
     /About|Under/,
     { timeout: 45000 },
   );
-  await httpPage.getByRole('tab', { name: 'Layers', exact: true }).click();
-  await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+  await httpPage.getByRole('tab', { name: 'Supports', exact: true }).click();
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed\./)).toBeVisible({
     timeout: 45000,
   });
   await httpPage.getByRole('button', { name: 'Auto', exact: true }).click();
@@ -762,8 +748,8 @@ try {
     httpPage.getByRole('button', { name: 'Auto', exact: true }),
   ).toBeEnabled({ timeout: 45000 });
   await expect(httpPage.getByText('30 × 10 × 24 mm')).toHaveCount(0);
-  await httpPage.getByRole('tab', { name: 'Layers', exact: true }).click();
-  await expect(httpPage.getByText(/Layer \d+ \/ \d+/)).toBeVisible({
+  await httpPage.getByRole('tab', { name: 'Supports', exact: true }).click();
+  await expect(httpPage.getByText(/Layer \d+ \/ \d+|No supports needed\./)).toBeVisible({
     timeout: 45000,
   });
   const bracketText = await readFile(

@@ -6,13 +6,12 @@ import {
   createPreviewClient,
   type PreviewClient,
   type PreviewProfile,
-  type SupportPreview,
-  type FastPreview,
+  type FastSupportPreview,
 } from "@time-estimator/browser-preview";
 import { displayTransform } from "@time-estimator/browser-preview/geometry";
 import {
-  createToolpathOverlay,
-  type SupportOverlay,
+  createSupportShapeOverlay,
+  type SupportShapeOverlay,
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
 import { previewColor } from "../lib/shared";
@@ -54,13 +53,7 @@ interface Props {
   onUseMeters: () => void;
   disabled?: boolean;
 }
-const categories = [
-  { id: "walls", label: "Walls", color: "#ff7d38" },
-  { id: "infill", label: "Infill", color: "#b03029" },
-  { id: "surfaces", label: "Surfaces", color: "#9654cc" },
-  { id: "supports", label: "Supports", color: "#00b000" },
-  { id: "helpers", label: "Outline", color: "#00876e" },
-];
+
 
 export default function Preview({
   file,
@@ -79,14 +72,13 @@ export default function Preview({
   const host = useRef<HTMLDivElement>(null);
   const fileWorker = useRef<Worker | null>(null);
   const client = useRef<PreviewClient<File> | null>(null);
-  const layerClient = useRef<PreviewClient<File> | null>(null);
   const orientationClient = useRef<PreviewClient<File> | null>(null);
   const meshRef = useRef<THREE.Mesh<
     THREE.BufferGeometry,
     THREE.MeshStandardMaterial
   > | null>(null);
   const frameRef = useRef<THREE.Group | null>(null);
-  const overlayRef = useRef<SupportOverlay | null>(null);
+  const overlayRef = useRef<SupportShapeOverlay | null>(null);
   const reset = useRef<() => void>(() => {});
   const render = useRef<() => void>(() => {});
   const revision = useRef(0);
@@ -94,9 +86,7 @@ export default function Preview({
   const faceModeRef = useRef(false);
   const [loadedModel, setModel] = useState<Model | null>(null);
   const [profile, setProfile] = useState<PreviewProfile | null>(null);
-  const [quick, setQuick] = useState<FastPreview | null>(null);
-  const [layerCalculating, setLayerCalculating] = useState(false);
-  const [preview, setPreview] = useState<SupportPreview | null>(null);
+  const [preview, setPreview] = useState<FastSupportPreview | null>(null);
   const [tab, setTab] = useState<"model" | "layers">("model");
   const [reading, setReading] = useState(false);
   const [orienting, setOrienting] = useState(false);
@@ -108,8 +98,6 @@ export default function Preview({
   const [retry, setRetry] = useState(0);
   const [message, setMessage] = useState("");
   const [layerIndex, setLayerIndex] = useState(0);
-  const [onlyLayer, setOnlyLayer] = useState(false);
-  const [hidden, setHidden] = useState<string[]>([]);
   const [faceMode, setFaceMode] = useState(false);
   const model =
     loadedModel?.file === file &&
@@ -158,7 +146,6 @@ export default function Preview({
       controller.abort();
       client.current?.dispose();
       orientationClient.current?.dispose();
-      layerClient.current?.dispose();
       client.current = null;
       orientationClient.current = null;
     };
@@ -168,11 +155,9 @@ export default function Preview({
     revision.current++;
     client.current?.cancel();
     orientationClient.current?.cancel();
-    layerClient.current?.cancel();
     overlayRef.current?.dispose();
     overlayRef.current = null;
     setPreview(null);
-    setQuick(null);
     setOrienting(false);
     setMessage("");
   }, [file, mirror, rotation, scale, infill, layerHeight, supports]);
@@ -228,9 +213,8 @@ export default function Preview({
     }
   }
 
-  // Quick timing reuses the native C++ sampled estimator and never starts full slicing.
+  // One background task shares physical slices between support shapes and quick timing.
   useEffect(() => {
-    setQuick(null);
     if (
       !file ||
       !profile ||
@@ -245,6 +229,7 @@ export default function Preview({
     }
     let active = true;
     setCalculating(true);
+    setCalculationProgress(null);
     const timer = window.setTimeout(async () => {
       try {
         client.current ??= makeClient();
@@ -257,22 +242,28 @@ export default function Preview({
               : supports === "normal"
                 ? "normal"
                 : "tree",
-          scope: "model_body",
+          scope: "model_and_supports",
           mirrorX: mirror,
           rotation,
           scale,
           infill,
           layerHeight,
-        });
+        }, { onProgress: (progress) => {
+          if (!active) return;
+          if (progress.stage === "extracting") setCalculationProgress("finishing");
+          else if (progress.stage === "generating" && Number.isFinite(progress.percent))
+            setCalculationProgress(current => Math.max(typeof current === "number" ? current : 0, Math.min(99, Math.round(progress.percent))));
+        }});
         if (active)
           flushSync(() => {
-            setQuick(result);
+            setPreview(result);
+            setLayerIndex(Math.max(0, result.layers.length - 1));
             setCalculating(false);
           });
       } catch (error) {
         if (active && (error as { code?: string }).code !== "canceled")
           setMessage(
-            "Quick estimate unavailable for this shape. Open Layers for a full estimate.",
+            error instanceof Error ? error.message.slice(0, 200) : "Couldn't prepare this preview.",
           );
       } finally {
         if (active) setCalculating(false);
@@ -301,105 +292,6 @@ export default function Preview({
     retry,
   ]);
 
-  // Full Orca paths (including supports) are only needed after the user opens Layers.
-  useEffect(() => {
-    if (
-      tab !== "layers" ||
-      preview ||
-      !file ||
-      !profile ||
-      !modelReady ||
-      !fits ||
-      tooSmall ||
-      orienting ||
-      disabled
-    ) {
-      setLayerCalculating(false);
-      return;
-    }
-    let active = true;
-    setLayerCalculating(true);
-    setCalculationProgress(null);
-    (async () => {
-      try {
-        layerClient.current ??= makeClient();
-        const result = await layerClient.current.generate(
-          {
-            input: file,
-            profile: profileForPreviewBed(profile, printer),
-            support:
-              supports === "none"
-                ? "none"
-                : supports === "normal"
-                  ? "normal"
-                  : "tree",
-            view: "print",
-            mirrorX: mirror,
-            rotation,
-            scale,
-            infill,
-            layerHeight,
-          },
-          {
-            onProgress: (progress) => {
-              if (!active) return;
-              if (progress.stage === "extracting")
-                setCalculationProgress("finishing");
-              else if (
-                progress.stage === "generating" &&
-                Number.isFinite(progress.percent)
-              )
-                setCalculationProgress((current) =>
-                  Math.max(
-                    typeof current === "number" ? current : 0,
-                    Math.min(99, Math.round(progress.percent)),
-                  ),
-                );
-            },
-          },
-        );
-        if (active)
-          flushSync(() => {
-            setPreview(result);
-            setLayerCalculating(false);
-            setLayerIndex(result.layers.length - 1);
-            setOnlyLayer(false);
-            setHidden([]);
-          });
-      } catch (error) {
-        if (active && (error as { code?: string }).code !== "canceled")
-          setMessage(
-            error instanceof Error
-              ? error.message.slice(0, 200)
-              : "Couldn't generate layers.",
-          );
-      } finally {
-        if (active) setLayerCalculating(false);
-      }
-    })();
-    return () => {
-      active = false;
-      layerClient.current?.cancel();
-    };
-  }, [
-    tab,
-    preview,
-    file,
-    profile,
-    modelReady,
-    printer,
-    fits,
-    tooSmall,
-    mirror,
-    rotation,
-    scale,
-    infill,
-    layerHeight,
-    supports,
-    orienting,
-    disabled,
-    retry,
-  ]);
 
   useEffect(() => {
     setReading(Boolean(file));
@@ -709,25 +601,41 @@ export default function Preview({
   useEffect(() => {
     overlayRef.current?.dispose();
     overlayRef.current = null;
-    if (!preview || tab !== "layers" || !frameRef.current || !model) return;
+    if (!preview || !frameRef.current || !model) return;
     const center = model.min.map((value, i) => (value + model.max[i]) / 2);
     frameRef.current.position.set(
       center[0] - (preview.bounds.min[0] + preview.bounds.max[0]) / 2,
       center[1] - (preview.bounds.min[1] + preview.bounds.max[1]) / 2,
       model.min[2],
     );
-    const overlay = createToolpathOverlay(preview);
+    let overlay: SupportShapeOverlay;
+    try { overlay = createSupportShapeOverlay(preview); }
+    catch (error) {
+      setMessage(error instanceof Error ? error.message : "Couldn't display supports.");
+      render.current();
+      return;
+    }
     overlayRef.current = overlay;
     frameRef.current.add(overlay.group);
     return () => {
       overlay.dispose();
       if (overlayRef.current === overlay) overlayRef.current = null;
     };
-  }, [preview, model, tab]);
+  }, [preview, model]);
 
   useEffect(() => {
-    const layered = tab === "layers" && Boolean(preview);
-    if (meshRef.current) meshRef.current.visible = !layered;
+    const layered = tab === "layers" && Boolean(preview?.layers.length);
+    if (meshRef.current) {
+      meshRef.current.visible = true;
+      const material = meshRef.current.material;
+      const showSupports = layered && Boolean(preview?.shapes.length);
+      if (material.transparent !== showSupports) {
+        material.transparent = showSupports;
+        material.depthWrite = !showSupports;
+        material.needsUpdate = true;
+      }
+      material.opacity = showSupports ? 0.3 : 1;
+    }
     const overlay = overlayRef.current;
     if (!overlay) {
       render.current();
@@ -737,21 +645,15 @@ export default function Preview({
     const layer = preview?.layers[layerIndex];
     if (layer) {
       overlay.setLayerRange(-Infinity, layer.printZ + 0.000001);
-      overlay.setMoveRange(
-        onlyLayer ? layer.startSegment : 0,
-        layer.endSegment,
-      );
     }
-    for (const feature of preview?.features ?? [])
-      overlay.setFeatureVisible(feature.id, !hidden.includes(feature.category));
     render.current();
-  }, [preview, model, tab, layerIndex, onlyLayer, hidden]);
+  }, [preview, model, tab, layerIndex]);
 
-  const layered = tab === "layers" && Boolean(preview);
+  const layered = tab === "layers" && Boolean(preview?.layers.length);
   const dimensions = model?.min
     .map((value, i) => Number((model.max[i] - value).toFixed(1)))
     .join(" × ");
-  const seconds = preview?.time?.estimatedSeconds ?? quick?.bodySeconds;
+  const seconds = preview?.estimatedSeconds;
   const time =
     seconds !== undefined
       ? formatPrintTime(seconds)
@@ -792,7 +694,7 @@ export default function Preview({
               setTab("layers");
             }}
           >
-            Layers
+            Supports
           </button>
         </div>
       </div>
@@ -806,8 +708,8 @@ export default function Preview({
         <div className="print-time" aria-live="polite">
           <span>Print time:</span>
           <strong>{time}</strong>
-          {quick && !preview?.time && (
-            <span className="small muted">Quick estimate · model only</span>
+          {preview && (
+            <span className="small muted">Quick estimate</span>
           )}
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
@@ -891,40 +793,13 @@ export default function Preview({
           role="img"
           aria-label={
             layered
-              ? "Layer-by-layer print preview"
+              ? "Generated support shapes"
               : "Interactive model preview"
           }
         >
           {!model && (
             <div className="preview-placeholder">
               <p>{reading ? "Opening model…" : "Choose a file to preview."}</p>
-            </div>
-          )}
-          {layered && (
-            <div className="feature-legend" aria-label="Print features">
-              {categories
-                .filter((category) =>
-                  preview!.features?.some(
-                    (feature) => feature.category === category.id,
-                  ),
-                )
-                .map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    aria-pressed={!hidden.includes(category.id)}
-                    onClick={() =>
-                      setHidden((current) =>
-                        current.includes(category.id)
-                          ? current.filter((value) => value !== category.id)
-                          : [...current, category.id],
-                      )
-                    }
-                  >
-                    <i style={{ background: category.color }} />
-                    {category.label}
-                  </button>
-                ))}
             </div>
           )}
           {orienting && (
@@ -974,14 +849,7 @@ export default function Preview({
             <strong>
               Layer {layerIndex + 1} / {preview!.layers.length}
             </strong>
-            <label>
-              <input
-                type="checkbox"
-                checked={onlyLayer}
-                onChange={(event) => setOnlyLayer(event.target.checked)}
-              />{" "}
-              Only this layer
-            </label>
+
           </div>
         </div>
       )}
@@ -1016,14 +884,17 @@ export default function Preview({
           )}
         </p>
       )}
-      {tab === "layers" && layerCalculating && (
+      {calculating && (
         <p className="small" role="status">
           {calculationProgress === "finishing"
-            ? "Finishing layers…"
+            ? "Finishing supports…"
             : typeof calculationProgress === "number"
-              ? `Preparing layers… ${calculationProgress}%`
-              : "Preparing layers…"}
+              ? `Preparing supports… ${calculationProgress}%`
+              : "Preparing supports…"}
         </p>
+      )}
+      {tab === "layers" && preview && preview.shapes.length === 0 && (
+        <p className="small">{supports === "none" ? "Supports are turned off." : "No supports needed."}</p>
       )}
       {tooSmall && (
         <p className="small unit-warning">

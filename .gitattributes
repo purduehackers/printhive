@@ -1,0 +1,2 @@
+# Preserve checksummed standalone-library archives byte for byte.
+vendor/*.tgz -text

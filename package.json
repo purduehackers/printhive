@@ -14,7 +14,7 @@
     "db:migrate": "bun scripts/migrate.ts",
     "operator:add": "bun scripts/operator.ts",
     "cleanup": "bun scripts/cleanup.ts",
-    "preview:runtime": "bun node_modules/@time-estimator/browser-preview/scripts/fetch-runtime.mjs public/preview-engine"
+    "preview:runtime": "bun node_modules/@time-estimator/browser-preview/scripts/fetch-runtime.mjs public/preview-engine --replace"
   },
   "engines": {
     "bun": ">=1.4.3"
@@ -27,7 +27,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "three": "^0.186.1",
-    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.4.0.312e2a60de84.tgz"
+    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.5.0.0c616838ed2f.tgz"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.11",

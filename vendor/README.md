@@ -1,16 +1,18 @@
 # Browser preview package
 
 Source: the separate browser/ package in the time_estimator repository.
-Source commit: fc82ee9a8f0d6b8d9fabdf26a070228e78cb652a.
-Package: @time-estimator/browser-preview 0.4.0 (private).
-Archive SHA-256: 312e2a60de84cab285514da5bb7dd7d05a967a307695e47041798de26b9b78e4.
+Source commit: 3feddf30454b50175f51a092c2627d312cf9cf36.
+Package: @time-estimator/browser-preview 0.5.0 (private).
+Archive SHA-256: 0c616838ed2ff250c8aecd5d1762157cd164a0d00126e9e93270863289f781d4.
 
-The archive contains the reusable JavaScript API, declarations, pose/STL export, optional
-Three.js renderer, prebuilt C++ STL importer and model-body fast estimator, dependency notices and provisioning tools. A pinned MIT-licensed SHA-256 fallback supports ordinary HTTP development origins while retaining checksum verification.
-The importer is compiled independently from the existing source-matched STL repair program.
-It does not link the native/server estimator. Full Orca slicing engine assets are separately
-checksum-provisioned by preview:runtime and are not committed here.
+The reusable package includes the source-built serial Orca browser engine, native C++
+combined model/support pricing, solid support renderer, STL importer, pose/export tools,
+build identities and upstream notices. One worker request prepares model sections and
+support regions once; it does not generate support toolpaths or export G-code.
+The browser engine is built separately and does not link the native/server estimator SDK.
+preview:runtime copies the bundled, checksummed assets into the static directory.
+No server slicing or cache service is introduced.
 
-To update, pack the authoritative browser/ source, copy the archive with a content-hash
-suffix, change the file dependency in package.json, and run bun install. Keep its declared
-source commit and archive hash synchronized. Local integration does not authorize publishing.
+To update, pack the authoritative browser/ source, use an archive filename with its content
+hash, change the dependency in package.json, and run bun install. Keep this source commit
+and archive hash synchronized. Local integration does not authorize publishing.

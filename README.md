@@ -114,10 +114,39 @@ Development pre-bundles the preview entry points used by workers so first file s
 
 Model offers Auto orientation, selectable hull faces with hover highlighting, axis presets and Reset orientation. Auto uses Orca's own algorithm. Each file in a batch retains its own rotation, mirror option and copy count. Mirror and Copies appear beside file selection and apply to the active file; a row summary and the Previewing filename identify that file. Copies and Mirror remain visible. A More settings dropdown owns per-file material/color, infill, layer height, supports and model units. Existing batch item overrides persist those choices independently; the single-file API remains unchanged. Per-item copy counts use the existing batch API; no migration is needed. STL units default to millimeters. Meters (x1000) and inches (x25.4) are explicit per-file choices; a tiny-file hint offers Use meters without silently rescaling. Before reserving an upload, a worker transforms every original triangle and bakes the selected units, grounds the model and writes binary STL with corrected normals/winding. The reservation uses the resulting size; already baked mirroring is submitted as mirror=0 to prevent a second reflection. Canceling preparation stops that worker. The original local File remains available for reset.
 
-Layers shows actual walls, infill, surfaces and tree or regular supports. A gray workspace, build plate, floating feature legend, vertical layer slider and single-layer option follow desktop slicer previews. There is no per-layer playback control. Instanced beveled lines with radial normals replace overlapping boxes and noisy flat shading. The viewer redraws on changes rather than continuously while idle. Printer fit uses the selected XYZ orientation. The actual rendered bed and native slicing limits prefer the Prusa Core ONE+ (250 x 220 x 270 mm), then switch to H2D single-nozzle space (325 x 320 x 325 mm) when needed. The H2D fleet card's combined-nozzle 350 mm width is not used for this single-nozzle slice. Oversized models remain viewable with an explicit fit message and unavailable estimate; the bed never silently expands. Sources: [Prusa CORE One+](https://cdn.prusa3d.com/product/prusa-core-one/) and [Bambu H2D single-nozzle specifications](https://eu.store.bambulab.com/products/h2d?from=home_page_3dprinter).
+Supports shows the model with solid tree or regular support shapes and a vertical height/layer
+slider. It does not show model infill, walls, support-interface lines or playback controls.
+The model becomes translucent in Supports so supports underneath or inside it remain visible. No separate full slice starts when switching tabs.
+The actual bed prefers the Prusa Core ONE+ (250 x 220 x 270 mm), switching to H2D
+single-nozzle space (325 x 320 x 325 mm) when necessary. Oversized models retain a fit
+message and unavailable estimate; the bed never silently expands.
 
-Keep public/preview-profile.json explicit about its illustrative printer/process/filament assumptions. Replace it with resolved production settings before presenting the preview as the operator's setup. A quick estimate starts automatically for the selected file, using the independently built C++ sampled fast kernel with a 150 ms debounce. It does not download or run the full Orca engine. The UI labels it Quick estimate / model only because supports, startup and finish are excluded. Opening Layers starts full native slicing, including the chosen supports, and replaces that value with Orca's full slicer reference. Completed layers are reused until geometry or process settings change. GPU toolpaths exist only while Layers is visible. A rejected fast shape points to Layers instead of silently starting a slow slice. New settings/files, removal and unmount cancel stale work. Estimates are per copy, not multiplied into combined-plate or queue time. Both estimates remain uncalibrated. Inventory material names do not automatically resolve production filament profiles; the explicit illustrative profile still owns machine/filament assumptions. Browser memory and runtime limits still differ from desktop Orca. Checksums use Web Crypto when available and a bundled SHA-256 fallback on ordinary HTTP development addresses; slicing and Auto orientation therefore work when accessing a local server through a LAN address too.
+One combined fast task starts in the background after a 150 ms settings debounce. It
+prepares physical model sections and generated support regions once, then estimates model
+and support printing together with shared cooling. It does not export G-code. The UI shows
+Print time and Quick estimate; startup/finish and physical calibration remain outside this
+approximation. The generated support regions are rendered as one color without exposing
+internal interface classifications. A matching result is reused when switching views.
+Settings, units or orientation changes cancel stale workers and regenerate the result.
+Estimates remain per copy, not combined-plate or queue durations.
+
+The engine is source-built and bundled with the independently reusable browser package.
+No native/server estimator installation or server slicing/cache service is required.
+Inventory material names do not automatically resolve production filament profiles;
+public/preview-profile.json still declares illustrative machine/filament assumptions.
+Browser limits remain different from desktop Orca. Integrity uses Web Crypto or the same
+SHA-256 fallback on ordinary HTTP development addresses.
 
 Migration 004 adds the normal support setting while preserving jobs, custom materials, file references and event history. Run normal startup migrations before using Regular supports on an existing database.
 
-The browser regression checks native orientation, clickable faces, regular supports, the actual saved STL orientation, per-file mirror/copy isolation, actual exported mirrored vertices, original bytes for untouched files, quick timing before any full-engine request, native Layers on demand, dropdown isolation, unit-converted uploads, Core ONE/H2D/oversize selection and mobile layout. PREVIEW_UNIT_MODEL optionally checks a local meter-exported STL through the unit correction, real slice and saved-upload geometry. PREVIEW_SMOKE_MODEL can point to a local STL for an additional local-only generation and cutaway screenshot check. Screenshots are written to ignored test-results/.
+The browser regression checks native orientation, clickable faces, regular supports, the actual saved STL orientation, per-file mirror/copy isolation, actual exported mirrored vertices, original bytes for untouched files, one background request for timing/support shapes, slider reuse without another slice, dropdown isolation, unit-converted uploads, Core ONE/H2D/oversize selection and mobile layout. PREVIEW_UNIT_MODEL optionally checks a local meter-exported STL through the unit correction, support preview and saved-upload geometry. PREVIEW_SMOKE_MODEL can point to a local STL for an additional local-only generation and cutaway screenshot check. Screenshots are written to ignored test-results/.
+
+
+The 0.5 integration passes 65 unit checks (366 assertions), the production build and
+full desktop/mobile browser flow, including the attached meter-exported case, explicit
+unit correction, pose/export and independent per-file settings. A local HTTP development check
+observed about 1.5 seconds for the synthetic bracket and 3.0 seconds
+for the corrected key case from selection/unit choice through estimate availability.
+Switching to Supports made no additional engine request; neither file was uploaded.
+These are two development observations, not a general performance or physical-accuracy
+claim. The source library records its narrower engine comparisons separately.
