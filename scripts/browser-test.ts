@@ -386,6 +386,7 @@ try {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Print jobs' })).toBeVisible();
   await page.getByRole('link', { name: 'Manage Browser test bracket' }).click();
+  await expect(page.getByText('Mirror X axis')).toHaveCount(0);
   await page.getByRole('button', { name: 'Update status' }).click();
   await expect(
     page.getByText(

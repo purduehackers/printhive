@@ -34,7 +34,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
       <div className="section-heading"><h2 id="queue-heading">Queued <span className="count">{queued.length}</span></h2><span className="small muted">Ordered by confirmation time</span></div>
       {queued.length ? <ol className="queue-list">{queued.map((job, i) => <li key={job.id}>
         <span className="queue-position">{i + 1}</span>
-        <div className="queue-job"><h3>{job.title}</h3><Settings job={job} /><div className="small muted extra-settings">Supports: {job.supports === 'operator' ? 'operator decides' : job.supports} · Mirror: {job.mirror ? 'yes' : 'no'}</div></div>
+        <div className="queue-job"><h3>{job.title}</h3><Settings job={job} /><div className="small muted extra-settings">Supports: {job.supports === 'operator' ? 'operator decides' : job.supports}</div></div>
         <span className="mono small muted">#{reference(job.id)}</span>
       </li>)}</ol> : <div className="empty-state">No queued prints.</div>}
     </section>

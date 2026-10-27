@@ -73,7 +73,9 @@ try {
   for (const privateValue of [token, 'test@purdue.edu', 'Private notes', feedback, 'test-password-12345', cookie.split('=')[1]]) assert.equal(h.logs().includes(privateValue), false);
   assert.equal((await fetch(`${h.origin}/api/jobs/${one.id}/file`, { headers: { Cookie: cookie } })).status, 200);
   const details = await fetch(`${h.origin}/operator/jobs/${one.id}`, { headers: { Cookie: cookie } });
-  assert.equal(details.status, 200); assert.equal((await details.text()).includes(feedback), true);
+  const detailsText = await details.text();
+  assert.equal(details.status, 200); assert.equal(detailsText.includes(feedback), true);
+  assert.equal(detailsText.includes('Mirror X axis'), false);
   const rejectedJobs = await fetch(h.origin + '/operator?status=rejected', { headers: { Cookie: cookie } });
   assert.equal((await rejectedJobs.text()).includes('Production stream test'), true);
   assert.equal((await queue()).length, 0);

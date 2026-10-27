@@ -1,4 +1,5 @@
 import { test, expect } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 import {
   defaultPartSettings,
   resolvePartSettings,
@@ -6,6 +7,8 @@ import {
   partScale,
   type PartOptions,
 } from '../src/lib/part-settings';
+import { bakeOrientedSTL } from '../src/lib/oriented-file';
+import { parseSTL } from '../src/lib/stl';
 import type { Material } from '../src/lib/shared';
 
 const materials: Material[] = [
@@ -120,4 +123,25 @@ test('defaultPartSettings and resolvePartSettings honor operator-configured defa
   );
   expect(resolvedPart.material).toBe('PLA');
   expect(resolvedPart.color).toBe('red');
+});
+
+test('bakeOrientedSTL bakes X-axis mirroring into the exported STL with reversed winding', async () => {
+  const sourceBytes = await readFile(
+    new URL('./support-bracket.stl', import.meta.url),
+  );
+  const sourceFile = new File([sourceBytes], 'support-bracket.stl', {
+    type: 'application/octet-stream',
+  });
+  const { file: mirroredFile } = await bakeOrientedSTL(
+    sourceFile,
+    undefined,
+    true,
+    1,
+  );
+  let firstTriangle: number[] = [];
+  const info = await parseSTL(mirroredFile, (vertices, index) => {
+    if (index === 0) firstTriangle = vertices;
+  });
+  expect(info.triangles).toBe(24);
+  expect(firstTriangle).toEqual([15, -5, 0, 9, -5, 0, 9, 5, 0]);
 });
