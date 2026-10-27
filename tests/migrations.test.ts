@@ -34,9 +34,14 @@ test('rejection migration preserves existing jobs, events, operators and session
     expect(await sql`SELECT * FROM job_events`).toEqual([{ ...event, feedback: '' }]);
     expect(await sql`SELECT * FROM operators`).toEqual([{ id: 1, username: 'existing', password_hash: 'hash', active: 1 }]);
     expect(await sql`SELECT * FROM sessions`).toHaveLength(1);
-    expect(await sql`SELECT * FROM schema_migrations`).toHaveLength(5);
-    expect(await sql`SELECT name FROM materials`).toEqual([{ name: 'PLA' }]);
-    expect(await sql`SELECT name FROM material_colors ORDER BY id ASC`).toEqual([{ name: 'black' }, { name: 'white' }, { name: 'yellow' }, { name: 'red' }]);
+    expect(await sql`SELECT * FROM schema_migrations`).toHaveLength(6);
+    expect(await sql`SELECT name, is_default FROM materials`).toEqual([{ name: 'PLA', is_default: 1 }]);
+    expect(await sql`SELECT name, is_default FROM material_colors ORDER BY id ASC`).toEqual([
+      { name: 'black', is_default: 1 },
+      { name: 'white', is_default: 0 },
+      { name: 'yellow', is_default: 0 },
+      { name: 'red', is_default: 0 },
+    ]);
     await sql`UPDATE jobs SET supports = 'normal' WHERE id = 'existing-job'`;
     expect((await sql`SELECT supports FROM jobs`)[0].supports).toBe('normal');
     await sql`UPDATE jobs SET status = 'rejected' WHERE id = 'existing-job'`;

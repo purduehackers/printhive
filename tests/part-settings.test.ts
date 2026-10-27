@@ -85,3 +85,39 @@ test('percentage and model units produce a single validated preview/export multi
   for (const scalePercent of ['', '0', '-1', 'Infinity', 'abc', '10001'])
     expect(partScale({ ...global, scalePercent })).toBeNull();
 });
+
+test('defaultPartSettings and resolvePartSettings honor operator-configured default material and colour', () => {
+  const configuredMaterials: Material[] = [
+    {
+      id: 1,
+      name: 'PLA',
+      is_default: false,
+      colors: [
+        { id: 1, material_id: 1, name: 'black', code: '#000', is_default: false },
+        { id: 2, material_id: 1, name: 'red', code: '#f00', is_default: true },
+      ],
+    },
+    {
+      id: 2,
+      name: 'PETG',
+      is_default: true,
+      colors: [
+        { id: 3, material_id: 2, name: 'clear', code: '#fff', is_default: false },
+        { id: 4, material_id: 2, name: 'orange', code: '#f80', is_default: true },
+      ],
+    },
+  ];
+
+  const defaults = defaultPartSettings(configuredMaterials);
+  expect(defaults.material).toBe('PETG');
+  expect(defaults.color).toBe('orange');
+
+  // Overriding a part's material without overriding its colour uses that material's default colour
+  const resolvedPart = resolvePartSettings(
+    defaults,
+    { copies: 1, mirror: false, overrides: { material: 'PLA' } },
+    configuredMaterials,
+  );
+  expect(resolvedPart.material).toBe('PLA');
+  expect(resolvedPart.color).toBe('red');
+});

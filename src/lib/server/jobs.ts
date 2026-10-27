@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db';
 import { config } from './config';
-import { metadata, batchMetadata } from './validation';
+import { metadata, batchMetadata, type AllowedMaterial } from './validation';
 import { seal, unseal } from './tokens';
 import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
@@ -11,10 +11,17 @@ import { logError, logFailure } from './log';
 import { listMaterialsWithColors } from './materials';
 
 async function loadAllowedMaterials() {
-  let allowedMaterials: { name: string; colors: string[] }[] | undefined;
+  let allowedMaterials: AllowedMaterial[] | undefined;
   try {
     const mats = await listMaterialsWithColors();
-    if (mats.length) allowedMaterials = mats.map(m => ({ name: m.name, colors: m.colors.map(c => c.name) }));
+    if (mats.length) {
+      allowedMaterials = mats.map(m => ({
+        name: m.name,
+        is_default: m.is_default,
+        colors: m.colors.map(c => c.name),
+        defaultColor: (m.colors.find(c => c.is_default) ?? m.colors[0])?.name,
+      }));
+    }
   } catch { /* Fallback to default validation if DB not ready */ }
   return allowedMaterials;
 }

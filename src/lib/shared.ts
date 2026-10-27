@@ -20,11 +20,13 @@ export interface MaterialColor {
   material_id: number;
   name: string;
   code: string;
+  is_default?: boolean;
   created_at?: number;
 }
 export interface Material {
   id: number;
   name: string;
+  is_default?: boolean;
   created_at?: number;
   colors: MaterialColor[];
 }

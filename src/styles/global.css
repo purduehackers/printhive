@@ -16,10 +16,17 @@
 .operator-editor fieldset{border:0;margin:0;padding:0;min-width:0}
 .remove-operator{color:#874636}
 .material-card{border:1px solid var(--line);border-radius:6px;padding:22px;margin-bottom:20px;background:#fff}
-.material-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.material-card-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.material-card-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .material-card-top h3{margin:0;font-size:1.15rem}
+.material-card-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.default-filament-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:12px;background:#dceada;color:#35543a;font-size:.7rem;font-weight:650;letter-spacing:.01em}
 .color-badge-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .color-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;background:#eeefe6;border:1px solid var(--line);font-size:.78rem;text-transform:capitalize}
+.color-badge.is-default{background:#f7f5e2;border-color:#c6b66b}
+.color-default-tag{font-size:.66rem;font-weight:650;text-transform:uppercase;letter-spacing:.03em;color:#5a4d16;background:#efe39e;padding:2px 6px;border-radius:10px}
+.color-badge .set-default-color{background:none;border:none;padding:0 2px;font-size:.7rem;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer;text-transform:none}
+.color-badge .set-default-color:hover{color:var(--ink)}
 .color-badge .remove-color{background:none;border:none;padding:0 0 0 4px;font-size:1.1rem;line-height:1;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center}
 .color-badge .remove-color:hover{color:#874636}
 .add-color-form{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}

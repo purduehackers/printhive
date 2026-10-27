@@ -11,6 +11,8 @@ const DEFAULT_ROTATION = [...IDENTITY_ROTATION];
 import PartSettingsFields from './PartSettingsFields';
 import {
   defaultPartSettings,
+  getDefaultColor,
+  getDefaultMaterial,
   normalizePartOverrides,
   resolvePartSettings,
   partScale,
@@ -129,6 +131,17 @@ export default function SubmissionForm({
 
   function updateGlobalSettings(change: Partial<SharedPartSettings>) {
     const next = { ...globalSettings, ...change };
+    if (
+      change.material !== undefined &&
+      change.color === undefined &&
+      change.material.toLowerCase() !== globalSettings.material.toLowerCase()
+    ) {
+      const targetMat =
+        materials.find(
+          (item) => item.name.toLowerCase() === change.material!.toLowerCase(),
+        ) ?? getDefaultMaterial(materials);
+      next.color = getDefaultColor(targetMat);
+    }
     const resolved = resolvePartSettings(next, undefined, materials);
     next.material = resolved.material;
     next.color = resolved.color;

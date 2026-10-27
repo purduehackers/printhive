@@ -87,7 +87,24 @@ export async function operatorsFlow(origin: string, cookie: string) {
   const { color: petgBlack } = await addColRes.json();
   assert.equal(petgBlack.name, 'black');
 
-  // Delete colour
+  // Set default material & colour (with auth and CSRF checks)
+  assert.equal((await request(`/api/materials/${petg.id}/default`, 'POST', undefined, '')).status, 401);
+  assert.equal((await request(`/api/materials/${petg.id}/default`, 'POST', undefined, newCookie, 'https://evil.test')).status, 403);
+  const setDefMatRes = await request(`/api/materials/${petg.id}/default`, 'POST', undefined, newCookie);
+  assert.equal(setDefMatRes.status, 200);
+  const { materials: afterDefMat } = await setDefMatRes.json();
+  assert.equal(afterDefMat.find((m: { id: number }) => m.id === petg.id).is_default, true);
+
+  assert.equal((await request(`/api/materials/${petg.id}/colors/${petgBlack.id}/default`, 'POST', undefined, '')).status, 401);
+  const setDefColRes = await request(`/api/materials/${petg.id}/colors/${petgBlack.id}/default`, 'POST', undefined, newCookie);
+  assert.equal(setDefColRes.status, 200);
+  const { materials: afterDefCol } = await setDefColRes.json();
+  assert.equal(
+    afterDefCol.find((m: { id: number }) => m.id === petg.id).colors.find((c: { id: number }) => c.id === petgBlack.id).is_default,
+    true,
+  );
+
+  // Delete colour (which was default, promoting 'clear' back to default)
   const delColRes = await request(`/api/materials/${petg.id}/colors/${petgBlack.id}`, 'DELETE', undefined, newCookie);
   assert.equal(delColRes.status, 200);
 

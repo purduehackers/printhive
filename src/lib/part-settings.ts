@@ -18,10 +18,23 @@ export interface PartOptions {
 }
 export const UNIT_SCALES = { mm: 1, m: 1000, in: 25.4 } as const;
 
+export function getDefaultMaterial(materials: Material[]): Material {
+  return materials.find((item) => item.is_default) ?? materials[0];
+}
+
+export function getDefaultColor(material: Material): string {
+  return (
+    material.colors.find((item) => item.is_default)?.name ??
+    material.colors[0]?.name ??
+    'black'
+  );
+}
+
 export function defaultPartSettings(materials: Material[]): SharedPartSettings {
+  const material = getDefaultMaterial(materials);
   return {
-    material: materials[0].name,
-    color: materials[0].colors[0]?.name ?? 'black',
+    material: material.name,
+    color: getDefaultColor(material),
     infill: 15,
     layerHeight: 0.2,
     supports: 'operator',
@@ -40,14 +53,20 @@ export function resolvePartSettings(
   const material =
     materials.find(
       (item) => item.name.toLowerCase() === settings.material.toLowerCase(),
-    ) ?? materials[0];
-  const color = material.colors.find(
-    (item) => item.name.toLowerCase() === settings.color.toLowerCase(),
-  );
+    ) ?? getDefaultMaterial(materials);
+  const materialOverriddenWithoutColor =
+    part?.overrides?.material !== undefined &&
+    part.overrides.color === undefined &&
+    part.overrides.material.toLowerCase() !== global.material.toLowerCase();
+  const color = materialOverriddenWithoutColor
+    ? undefined
+    : material.colors.find(
+        (item) => item.name.toLowerCase() === settings.color.toLowerCase(),
+      );
   return {
     ...settings,
     material: material.name,
-    color: color?.name ?? material.colors[0]?.name ?? 'black',
+    color: color?.name ?? getDefaultColor(material),
     copies: part?.copies ?? 1,
     mirror: part?.mirror ?? false,
   };
@@ -64,7 +83,7 @@ export function normalizePartOverrides(
   const material =
     materials.find(
       (item) => item.name.toLowerCase() === materialName.toLowerCase(),
-    ) ?? materials[0];
+    ) ?? getDefaultMaterial(materials);
   if (
     next.color &&
     !material.colors.some(

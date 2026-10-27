@@ -1,7 +1,14 @@
 import { COLORS, INFILLS, LAYERS, MAX_BATCH_SIZE, MAX_FILE_BYTES, SUPPORTS } from '../shared';
 import { invariant } from './errors';
 
-export function metadata(input: unknown, allowedMaterials?: { name: string; colors: string[] }[]) {
+export interface AllowedMaterial {
+  name: string;
+  is_default?: boolean;
+  colors: string[];
+  defaultColor?: string;
+}
+
+export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid submission.');
   const d = input as Record<string, unknown>;
   const string = (key: string, max: number, optional = false) => {
@@ -23,9 +30,10 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
   const title = string('title', 200);
   invariant(!/[\r\n]/.test(title), 400, 'Title must be a single line.');
 
-  const allowed = allowedMaterials?.length ? allowedMaterials : [{ name: 'PLA', colors: [...COLORS] }];
+  const allowed: AllowedMaterial[] = allowedMaterials?.length ? allowedMaterials : [{ name: 'PLA', is_default: true, colors: [...COLORS], defaultColor: COLORS[0] }];
+  const defaultMat = allowed.find(m => m.is_default) ?? allowed[0];
   let material: string;
-  let matchedMat = allowed[0];
+  let matchedMat = defaultMat;
   if (d.material !== undefined && d.material !== null && d.material !== '') {
     const matStr = string('material', 50);
     const found = allowed.find(m => m.name.toLowerCase() === matStr.toLowerCase());
@@ -33,7 +41,7 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
     matchedMat = found;
     material = found.name;
   } else {
-    material = allowed[0].name;
+    material = defaultMat.name;
   }
 
   let color: string;
@@ -43,7 +51,7 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
     invariant(foundColor, 400, 'Invalid color.');
     color = foundColor;
   } else {
-    color = matchedMat.colors[0] ?? 'black';
+    color = matchedMat.defaultColor ?? matchedMat.colors[0] ?? 'black';
   }
 
   const supportAngle = d.support_angle ?? null;
@@ -59,7 +67,7 @@ export function metadata(input: unknown, allowedMaterials?: { name: string; colo
   };
 }
 
-export function batchMetadata(input: unknown, allowedMaterials?: { name: string; colors: string[] }[]) {
+export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid batch submission.');
   const d = input as Record<string, unknown>;
   invariant(Array.isArray(d.items) && d.items.length >= 1 && d.items.length <= MAX_BATCH_SIZE, 400, `Choose between 1 and ${MAX_BATCH_SIZE} STL files.`);
