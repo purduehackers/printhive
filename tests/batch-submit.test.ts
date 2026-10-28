@@ -133,6 +133,10 @@ describe('batch submission flow', () => {
     ]);
     expect(queue.every(j => j.color === 'red' && j.infill === 30)).toBe(true);
     expect(queue.map(j => j.copies)).toEqual([2, 1, 3]);
+    expect(typeof batch.batchId).toBe('string');
+    expect(batch.batchTitle).toBe('Gearbox Assembly');
+    expect(batch.groupName).toBe('Gearbox Assembly');
+    expect(queue.every(j => j.batch_id === batch.batchId && j.batch_title === 'Gearbox Assembly' && j.group_name === 'Gearbox Assembly')).toBe(true);
 
     // Confirming again is idempotent
     const repeat = await confirmation(token, true);

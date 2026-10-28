@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
-import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus } from '../../lib/server/jobs';
+import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus, updateJobGroup } from '../../lib/server/jobs';
 import { login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
@@ -135,6 +135,12 @@ export const ALL: APIRoute = async (context) => {
       rateLimit('status:' + operator.id, 120, 900000);
       const items = (body as any).items ?? (body as any).ids;
       return json(await batchUpdateStatus(items, (body as any).status, operator.id, { feedback: (body as any).feedback }));
+    }
+    if (path === 'jobs/group' && ['POST', 'PATCH'].includes(method)) {
+      const operator = await requireOperator(context), body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Invalid group update.');
+      rateLimit('group:' + operator.id, 120, 900000);
+      return json(await updateJobGroup((body as any).ids, (body as any).group_name, operator.id, { ungroup: Boolean((body as any).ungroup) }));
     }
     return json({ error: 'Endpoint not found.' }, 404);
   } catch (error) { return errorResponse(error, request); }

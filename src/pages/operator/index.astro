@@ -3,7 +3,7 @@ import Layout from '../../layouts/Layout.astro';
 import OperatorQueue from '../../components/OperatorQueue';
 import { currentOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
-import { STATUSES, reference, type Job } from '../../lib/shared';
+import { STATUSES, effectiveGroupName, reference, type Job } from '../../lib/shared';
 
 const operator = await currentOperator(Astro);
 if (!operator) return Astro.redirect('/operator/login');
@@ -61,6 +61,7 @@ const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL 
               <td>
                 <a class="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
                 <span class="mono small muted">#{reference(job.id)}</span>
+                {effectiveGroupName(job) && <span class="group-badge">{effectiveGroupName(job)}</span>}
               </td>
               <td>{job.email}</td>
               <td>

@@ -365,6 +365,9 @@ try {
   )![0];
   await page.goto(batchLink);
   await expect(
+    page.getByRole('heading', { name: 'Batch Rover', exact: true }),
+  ).toBeVisible();
+  await expect(
     page.getByRole('button', { name: 'Confirm 2 prints' }),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Confirm 2 prints' }).click();
@@ -378,6 +381,9 @@ try {
   await expect(
     page.getByRole('heading', { name: 'Batch Rover · wheel_right' }),
   ).toBeVisible();
+  await expect(
+    page.locator('.group-badge', { hasText: 'Batch Rover' }).first(),
+  ).toBeVisible();
   await page.goto(h.origin + '/operator/login');
   await page.getByLabel('Username').fill('operator');
   await page
@@ -385,6 +391,11 @@ try {
     .fill('test-password-12345');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page.getByRole('heading', { name: 'Print jobs' })).toBeVisible();
+  await expect(
+    page.locator('.group-badge', { hasText: 'Batch Rover' }).first(),
+  ).toBeVisible();
+  await page.getByLabel('Sort by:').selectOption('group');
+  await page.getByLabel('Sort by:').selectOption('queue');
   await page.getByRole('link', { name: 'Manage Browser test bracket' }).click();
   await expect(page.getByText('Mirror X axis')).toHaveCount(0);
   await page.getByRole('button', { name: 'Update status' }).click();

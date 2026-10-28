@@ -4,7 +4,7 @@ import { confirmation } from '../lib/server/jobs';
 import { smallBody } from '../lib/server/http';
 import { HttpError } from '../lib/server/errors';
 import { logFailure } from '../lib/server/log';
-import { reference, type Job } from '../lib/shared';
+import { effectiveGroupName, reference, summarizeGroupStatus, type Job, type Status } from '../lib/shared';
 let token = Astro.url.searchParams.get('token') ?? '', job: Job | undefined, jobs: Job[] = [], already = false, error = '';
 const submitted = Astro.request.method === 'POST';
 try {
@@ -16,6 +16,10 @@ try {
   Astro.response.status = e instanceof HttpError ? e.status : 500;
 }
 const isBatch = jobs.length > 1;
+const batchGroup = job ? effectiveGroupName(job) : null;
+const batchSummary = isBatch && (submitted || already)
+  ? summarizeGroupStatus(jobs.filter(j => j.status !== 'pending_confirmation') as { status: Status }[])
+  : null;
 ---
 <Layout title={isBatch ? 'Confirm your prints' : 'Confirm your print'}>
   <section class="receipt">
@@ -24,16 +28,25 @@ const isBatch = jobs.length > 1;
       <p class="notice error">{error}</p>
     ) : isBatch ? (
       <>
-        <p class="muted">{jobs.length} prints in this batch</p>
+        {batchGroup && <h2>{batchGroup}</h2>}
+        <p class="muted">
+          {jobs.length} prints in this batch
+          {batchSummary && <> · <span class={`status ${batchSummary.status}`}>{batchSummary.label}</span></>}
+        </p>
         <ul class="batch-confirm-list">
           {jobs.map(j => (
             <li>
               <strong>{j.title}</strong>
-              <span class="mono">#{reference(j.id)}</span>
+              <span class="batch-confirm-meta">
+                {(submitted || already) && j.status !== 'pending_confirmation' && (
+                  <span class={`status ${j.status}`}>{j.status}</span>
+                )}
+                <span class="mono">#{reference(j.id)}</span>
+              </span>
             </li>
           ))}
         </ul>
-        <p>{already ? 'These prints have already been confirmed.' : submitted ? 'Your prints are queued. We’ll email you when an operator changes their status.' : 'Press the button below to confirm your batch and join the queue.'}</p>
+        <p>{already ? `These prints have already been confirmed${batchSummary ? ` (${batchSummary.label})` : ''}.` : submitted ? 'Your prints are grouped and queued. We’ll email you when an operator changes their status.' : 'Press the button below to confirm your batch and join the queue.'}</p>
         {!submitted && !already && (
           <form method="post" action="/confirm">
             <input type="hidden" name="token" value={token} />

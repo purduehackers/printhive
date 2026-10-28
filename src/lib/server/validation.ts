@@ -67,11 +67,28 @@ export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
   };
 }
 
+export function validateGroupName(input: unknown): string | null {
+  if (input === null || input === undefined || input === '') return null;
+  invariant(typeof input === 'string', 400, 'Group name must be text.');
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  invariant(trimmed.length <= 200, 400, 'Group name must be at most 200 characters.');
+  invariant(!/[\r\n\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(trimmed), 400, 'Invalid group name.');
+  return trimmed;
+}
+
 export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid batch submission.');
   const d = input as Record<string, unknown>;
   invariant(Array.isArray(d.items) && d.items.length >= 1 && d.items.length <= MAX_BATCH_SIZE, 400, `Choose between 1 and ${MAX_BATCH_SIZE} STL files.`);
   const baseTitle = typeof d.title === 'string' ? d.title.trim() : '';
+  if (baseTitle) {
+    invariant(baseTitle.length <= 200 && !/[\r\n\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(baseTitle), 400, 'Invalid batch title (maximum 200 characters).');
+  }
+  const explicitGroup = d.group_name !== undefined ? validateGroupName(d.group_name) : undefined;
+  const batchTitle = baseTitle || explicitGroup || 'Batch submission';
+  const groupName = explicitGroup !== undefined ? explicitGroup : batchTitle;
+
   return d.items.map((rawItem, index) => {
     invariant(rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem), 400, 'Invalid item in batch.');
     const item = rawItem as Record<string, unknown>;
@@ -88,20 +105,24 @@ export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial
         itemTitle = stem.slice(0, 200);
       }
     }
-    return metadata({
-      ...d,
-      title: itemTitle,
-      original_filename: item.original_filename,
-      file_size: item.file_size,
-      notes: item.notes ?? d.notes,
-      infill: item.infill ?? d.infill,
-      material: item.material ?? d.material,
-      color: item.color ?? d.color,
-      layer_height: item.layer_height ?? d.layer_height,
-      supports: item.supports ?? d.supports,
-      support_angle: item.support_angle === undefined ? d.support_angle : item.support_angle,
-      copies: item.copies ?? d.copies,
-      mirror: item.mirror ?? d.mirror,
-    }, allowedMaterials);
+    return {
+      ...metadata({
+        ...d,
+        title: itemTitle,
+        original_filename: item.original_filename,
+        file_size: item.file_size,
+        notes: item.notes ?? d.notes,
+        infill: item.infill ?? d.infill,
+        material: item.material ?? d.material,
+        color: item.color ?? d.color,
+        layer_height: item.layer_height ?? d.layer_height,
+        supports: item.supports ?? d.supports,
+        support_angle: item.support_angle === undefined ? d.support_angle : item.support_angle,
+        copies: item.copies ?? d.copies,
+        mirror: item.mirror ?? d.mirror,
+      }, allowedMaterials),
+      batch_title: batchTitle,
+      group_name: groupName,
+    };
   });
 }

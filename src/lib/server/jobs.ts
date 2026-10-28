@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db';
 import { config } from './config';
-import { metadata, batchMetadata, type AllowedMaterial } from './validation';
+import { metadata, batchMetadata, validateGroupName, type AllowedMaterial } from './validation';
 import { seal, unseal } from './tokens';
 import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
@@ -48,12 +48,18 @@ export async function reserveBatch(input: unknown) {
   const allowedMaterials = await loadAllowedMaterials();
   const itemsData = batchMetadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const expires = now + config().uploadTTL;
+  const batchId = randomUUID();
+  const batchTitle = itemsData[0].batch_title;
+  const groupName = itemsData[0].group_name;
   const ids = itemsData.map(() => randomUUID());
   // Seal all capabilities and the batch token first so misconfiguration leaves no incomplete submission.
   const items = itemsData.map((data, idx) => ({
     id: ids[idx],
     title: data.title,
     original_filename: data.original_filename,
+    batch_id: batchId,
+    batch_title: batchTitle,
+    group_name: groupName,
     capability: seal(ids[idx], 'upload', expires),
   }));
   const batchToken = seal(ids, 'upload', expires);
@@ -63,12 +69,12 @@ export async function reserveBatch(input: unknown) {
     const data = itemsData[i], id = ids[i];
     await sql`
       INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, support_angle, copies, mirror,
-        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
+        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, batch_id, batch_title, group_name)
       VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
         ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
-        'reserved', ${now + 86400000}, ${expires}, ${now + i})`;
+        'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name})`;
   }
-  return { items, batchToken };
+  return { batchId, batchTitle, groupName, items, batchToken };
 }
 
 let activeUploads = 0;
@@ -203,7 +209,7 @@ export async function confirmation(token: string, commit = false) {
 }
 export async function publicQueue(): Promise<PublicJob[]> {
   const sql = await db();
-  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version
+  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version, batch_id, batch_title, group_name
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
 }
@@ -312,14 +318,63 @@ export async function batchUpdateStatus(
     }
   }
 
+  const byRecipient = new Map<string, Job[]>();
   for (const job of toNotify) {
+    const key = job.email.toLowerCase();
+    if (!byRecipient.has(key)) byRecipient.set(key, []);
+    byRecipient.get(key)!.push(job);
+  }
+
+  for (const recipientJobs of byRecipient.values()) {
     try {
-      await mailer(statusMessage(job, feedback), { jobId: job.id, purpose: 'status' });
+      await mailer(statusMessage(recipientJobs, feedback), { jobId: recipientJobs[0].id, purpose: 'status' });
     } catch (error) {
-      logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
-      warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+      for (const job of recipientJobs) {
+        logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
+        warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+      }
     }
   }
 
   return { updated, unchanged, errors, warnings };
+}
+
+export async function updateJobGroup(
+  rawIds: unknown,
+  rawGroupName: unknown,
+  operator: number,
+  { ungroup = false }: { ungroup?: boolean } = {}
+): Promise<{ updated: Job[]; group_name: string | null }> {
+  invariant(Number.isSafeInteger(operator) && operator > 0, 401, 'Please log in as an operator.');
+  const groupName = ungroup ? null : validateGroupName(rawGroupName);
+  const sql = await db();
+
+  if (ungroup && (!Array.isArray(rawIds) || rawIds.length === 0)) {
+    const targetName = validateGroupName(rawGroupName);
+    invariant(targetName, 400, 'Specify a group name or print IDs to ungroup.');
+    const updated: Job[] = await sql`
+      UPDATE jobs SET group_name = NULL
+      WHERE group_name = ${targetName} AND confirmed_at IS NOT NULL
+      RETURNING *`;
+    return { updated, group_name: null };
+  }
+
+  invariant(Array.isArray(rawIds) && rawIds.length > 0 && rawIds.length <= 100, 400, 'Must provide between 1 and 100 prints to group.');
+  const ids = Array.from(new Set(rawIds.map(id => {
+    invariant(typeof id === 'string' && id.trim().length > 0, 400, 'Invalid print ID.');
+    return id.trim();
+  })));
+
+  const updated: Job[] = [];
+  await sql.begin(async tx => {
+    for (const id of ids) {
+      const [row]: Job[] = await tx`
+        UPDATE jobs SET group_name = ${groupName}
+        WHERE id = ${id} AND confirmed_at IS NOT NULL
+        RETURNING *`;
+      if (row) updated.push(row);
+    }
+  });
+
+  return { updated, group_name: groupName };
 }

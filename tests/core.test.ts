@@ -111,7 +111,10 @@ describe('authenticated links and confirmation', () => {
   test('public queue contains no email, notes, filenames or storage references', async () => {
     await queued(); const [job] = await publicQueue();
     expect(job.support_angle).toBeNull();
-    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'support_angle', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version'].sort());
+    expect(job.batch_id).toBeNull();
+    expect(job.batch_title).toBeNull();
+    expect(job.group_name).toBeNull();
+    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'support_angle', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version', 'batch_id', 'batch_title', 'group_name'].sort());
   });
 });
 describe('upload and delivery failure semantics', () => {
