@@ -167,6 +167,9 @@ try {
     .fill('Profile failure submission');
   await page.getByLabel('Purdue email').fill('profiles@purdue.edu');
   await page
+    .getByRole('button', { name: 'Review print', exact: true })
+    .click();
+  await page
     .getByRole('button', { name: 'Send confirmation email', exact: true })
     .click();
   await expect(

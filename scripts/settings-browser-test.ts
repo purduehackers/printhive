@@ -202,7 +202,7 @@ try {
   await page.getByRole('button', { name: /^first\.stl/ }).click();
   await expect(page.locator('.file-options')).toBeHidden();
   await page
-    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
     .click();
   await expect(page.getByRole('alert')).toContainText('Enter a scale');
   await expect(
@@ -211,7 +211,7 @@ try {
   await choose('second');
   await page.getByRole('button', { name: /^second\.stl/ }).click();
   await page
-    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
     .click();
   await expect(page.locator('.preview-file')).toContainText('first.stl');
   await expect(
@@ -222,13 +222,13 @@ try {
     .fill('200');
   await page.getByLabel('Project / part title').fill('');
   await page
-    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
     .click();
   await expect(page.getByLabel('Project / part title')).toBeFocused();
   await page.getByLabel('Project / part title').fill('Validation recovery');
   await page.getByLabel('Purdue email').fill('settings@example.test');
   await page
-    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
     .click();
   await expect(page.getByLabel('Purdue email')).toBeFocused();
   expect(writes).toEqual([]);
@@ -237,6 +237,12 @@ try {
     .getByLabel('Project / part title')
     .fill('Default and local scale test');
   await page.getByLabel('Purdue email').fill('settings@purdue.edu');
+  await page
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your 2 prints', exact: true }),
+  ).toBeVisible();
   await page
     .getByRole('button', { name: 'Send confirmation email', exact: true })
     .click();

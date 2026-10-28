@@ -167,4 +167,30 @@ describe('batch submission flow', () => {
       expect(await Bun.file(filePath(item.id + '.stl')).exists()).toBe(false);
     }
   });
+
+  test('finalizeBatch with matching verifiedEmail skips confirmation email and queues all prints immediately', async () => {
+    const batch = await reserveBatch({
+      title: 'Verified Batch',
+      email: 'verified@purdue.edu',
+      items: [
+        { original_filename: 'left.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'right.stl', file_size: Buffer.byteLength(asciiSTL) },
+      ],
+    }, { verifiedEmail: 'verified@purdue.edu' });
+    expect(batch.verified).toBe(true);
+
+    for (const item of batch.items) {
+      await upload(item.id, item.capability, body(), rejectedMailer, { deferEmail: true, verifiedEmail: 'verified@purdue.edu' });
+    }
+
+    const res = await finalizeBatch(batch.batchToken, rejectedMailer, { verifiedEmail: 'verified@purdue.edu' });
+    expect(res.confirmed).toBe(true);
+    expect(accepted).toHaveLength(0);
+
+    const queue = await publicQueue();
+    expect(queue.map(j => j.title)).toEqual([
+      'Verified Batch · left',
+      'Verified Batch · right',
+    ]);
+  });
 });

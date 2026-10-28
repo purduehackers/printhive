@@ -8,6 +8,7 @@ import { invariant } from '../../lib/server/errors';
 import { reference } from '../../lib/shared';
 import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
 import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial, setDefaultColor, setDefaultMaterial } from '../../lib/server/materials';
+import { VERIFIED_EMAIL_COOKIE, getVerifiedEmail } from '../../lib/server/tokens';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
@@ -17,25 +18,29 @@ export const ALL: APIRoute = async (context) => {
       const sql = await db(); await sql`SELECT id FROM jobs LIMIT 1`;
       return json({ ok: true });
     }
+    if (path === 'verified-email' && method === 'DELETE') {
+      context.cookies.delete(VERIFIED_EMAIL_COOKIE, { path: '/' });
+      return json({ ok: true });
+    }
     if (path === 'submissions' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
       const body = await smallBody(request);
-      return json(await reserve(body), 201);
+      return json(await reserve(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
     }
     if (path === 'submissions/batch' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
       const body = await smallBody(request);
-      return json(await reserveBatch(body), 201);
+      return json(await reserveBatch(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
     }
     if (path === 'submissions/batch/finalize' && method === 'POST') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
-      return json(await finalizeBatch(token));
+      return json(await finalizeBatch(token, undefined, { verifiedEmail: getVerifiedEmail(context) }));
     }
     const uploadMatch = /^submissions\/([a-f0-9-]{36})\/file$/.exec(path);
     if (uploadMatch && method === 'PUT') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       const deferEmail = new URL(request.url).searchParams.get('batch') === '1';
-      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail }));
+      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail, verifiedEmail: getVerifiedEmail(context) }));
     }
     if (path === 'login' && method === 'POST') {
       rateLimit('login:' + clientIP(context), 10, 900000);

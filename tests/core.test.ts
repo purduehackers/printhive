@@ -7,7 +7,7 @@ import { asciiSTL, binarySTL, submission } from './fixtures';
 import { metadata } from '../src/lib/server/validation';
 import { MAX_FEEDBACK_LENGTH, MAX_FILE_BYTES } from '../src/lib/shared';
 import { parseSTL } from '../src/lib/stl';
-import { seal, unseal } from '../src/lib/server/tokens';
+import { seal, unseal, sealVerifiedEmail, unsealVerifiedEmail, getVerifiedEmail, VERIFIED_EMAIL_COOKIE, VERIFIED_EMAIL_TTL } from '../src/lib/server/tokens';
 import { db, migrate, closeDb } from '../src/lib/server/db';
 import { reserve, upload, confirmation, publicQueue, updateStatus } from '../src/lib/server/jobs';
 import { cleanup } from '../src/lib/server/cleanup';
@@ -90,6 +90,45 @@ describe('authenticated links and confirmation', () => {
     process.env.CONFIRMATION_SECRET = 'b'.repeat(64);
     expect(() => unseal(token, 'confirm', 1000)).toThrow('invalid');
     process.env.CONFIRMATION_SECRET = 'a'.repeat(64);
+  });
+  test('verified email tokens enforce 30-day TTL, domain validation, tampering, and purpose isolation', () => {
+    expect(VERIFIED_EMAIL_TTL).toBe(30 * 24 * 60 * 60 * 1000);
+    const now = 1_000_000;
+    const token = sealVerifiedEmail('  Student@Purdue.EDU ', now + VERIFIED_EMAIL_TTL);
+    expect(unsealVerifiedEmail(token, now)).toEqual({ email: 'student@purdue.edu', expires: now + VERIFIED_EMAIL_TTL });
+    expect(unsealVerifiedEmail(token, now + VERIFIED_EMAIL_TTL - 1)?.email).toBe('student@purdue.edu');
+    expect(unsealVerifiedEmail(token, now + VERIFIED_EMAIL_TTL)).toBeNull();
+    expect(unsealVerifiedEmail('X' + token.slice(1), now)).toBeNull();
+    expect(() => unseal(token, 'confirm', now)).toThrow();
+    const confirmTok = seal(randomUUID(), 'confirm', now + 10000);
+    expect(unsealVerifiedEmail(confirmTok, now)).toBeNull();
+    expect(unsealVerifiedEmail(sealVerifiedEmail('user@example.com', now + 10000), now)).toBeNull();
+    process.env.CONFIRMATION_SECRET = 'b'.repeat(64);
+    expect(unsealVerifiedEmail(token, now)).toBeNull();
+    process.env.CONFIRMATION_SECRET = 'a'.repeat(64);
+
+    const reqWithHeader = new Request('http://localhost:4321/api/submissions', { headers: { 'x-verified-email-token': token } });
+    expect(getVerifiedEmail({ request: reqWithHeader }, now)).toBe('student@purdue.edu');
+    expect(getVerifiedEmail({ cookies: { get: (k: string) => k === VERIFIED_EMAIL_COOKIE ? { value: token } : undefined } }, now)).toBe('student@purdue.edu');
+  });
+  test('submissions with a matching verified email skip confirmation email and queue immediately', async () => {
+    const r = await reserve(submission({ email: 'verified@purdue.edu' }), { verifiedEmail: 'verified@purdue.edu' });
+    expect(r.verified).toBe(true);
+    const up = await upload(r.id, r.capability, body(), rejected, { verifiedEmail: 'verified@purdue.edu' });
+    expect(up.confirmed).toBe(true);
+    expect(accepted).toHaveLength(0);
+    const queue = await publicQueue();
+    expect(queue).toHaveLength(1);
+    expect(queue[0].id).toBe(r.id);
+    expect(queue[0].status).toBe('queued');
+
+    // Mismatched verified email falls back to normal confirmation email flow
+    const other = await reserve(submission({ email: 'different@purdue.edu' }), { verifiedEmail: 'verified@purdue.edu' });
+    expect(other.verified).toBe(false);
+    const otherUp = await upload(other.id, other.capability, body(), mailer, { verifiedEmail: 'verified@purdue.edu' });
+    expect(otherUp.confirmed).toBe(false);
+    expect(accepted).toHaveLength(1);
+    expect(await publicQueue()).toHaveLength(1);
   });
   test('GET does not enqueue; racing POSTs enqueue once and keep the position', async () => {
     const r = await ready(); await confirmation(r.token);

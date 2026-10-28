@@ -3,15 +3,27 @@ import Layout from '../layouts/Layout.astro';
 import SubmissionForm from '../components/SubmissionForm';
 import { listMaterialsWithColors } from '../lib/server/materials';
 import { AVAILABLE_PRINTERS } from '../lib/shared';
+import { VERIFIED_EMAIL_COOKIE, unsealVerifiedEmail } from '../lib/server/tokens';
 
 const materials = await listMaterialsWithColors();
+const cookieToken = Astro.cookies.get(VERIFIED_EMAIL_COOKIE)?.value ?? null;
+const verified = unsealVerifiedEmail(cookieToken);
+if (cookieToken && !verified) {
+  Astro.cookies.delete(VERIFIED_EMAIL_COOKIE, { path: '/' });
+}
 ---
 <Layout title="Submit a print" active="submit">
   <div class="page-heading">
     <h1>Submit a print</h1>
   </div>
 
-  <SubmissionForm initialMaterials={materials} client:load />
+  <SubmissionForm
+    initialMaterials={materials}
+    initialVerifiedEmail={verified?.email ?? null}
+    initialVerifiedToken={verified ? cookieToken : null}
+    initialVerifiedExpires={verified?.expires ?? null}
+    client:load
+  />
   <noscript><p class="notice">Enable JavaScript to upload and preview your STL.</p></noscript>
 
   <section class="submit-fleet-summary" aria-label="Available printers build limits">

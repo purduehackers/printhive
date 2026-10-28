@@ -181,3 +181,23 @@ details[open] > summary .dropdown-chevron{transform:rotate(180deg)}
 .batch-member-actions{display:flex;align-items:center;gap:12px}
 .batch-apply-checkbox{display:flex!important;align-items:flex-start;gap:10px;padding:10px 12px;background:#f3f5ea;border:1px solid var(--line);border-radius:5px;margin-bottom:16px}
 .batch-apply-checkbox input[type=checkbox]{width:16px;height:16px;margin-top:2px;accent-color:var(--green);flex-shrink:0}
+.contact-label-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.verified-email-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:#dceada;color:#35543a;font-size:.7rem;font-weight:650;letter-spacing:.01em}
+.contact-verified-note{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.review-panel{min-width:0;margin-bottom:24px}
+.review-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.review-header .eyebrow{margin-bottom:6px}
+.review-header h2{margin-bottom:0}
+.review-intro{margin-bottom:20px}
+.review-card,.review-part-card{background:#fcfcf9;margin-bottom:18px;padding:20px}
+.review-part-card.active{border-color:#98ab8a;background:#f5f8ee}
+.review-part-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.review-part-heading{min-width:0}
+.review-part-heading h3{margin-bottom:4px;overflow-wrap:anywhere}
+.review-preview-btn{min-height:34px;padding:6px 12px;font-size:.75rem}
+.review-preview-btn.is-active{background:#e3ecd8;border-color:#597d55}
+.review-overview-grid,.review-settings-grid{margin:16px 0 0;gap:16px}
+.review-value-text{text-transform:none!important;overflow-wrap:anywhere;flex-wrap:wrap}
+.review-notes-block{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.review-notes-label{display:block;font-size:.7rem;color:var(--muted);margin-bottom:6px}
+.review-notes-block .operator-notes{margin:0}

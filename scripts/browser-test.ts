@@ -234,6 +234,11 @@ try {
     path: 'test-results/submit-desktop.png',
     fullPage: true,
   });
+  await page.getByRole('button', { name: 'Review print', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your print', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to edit', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
   await expect(
     page.getByRole('heading', { name: 'Check your email' }),
@@ -328,7 +333,22 @@ try {
     fullPage: true,
   });
   await expect(page.getByText('30 × 24 × 10 mm')).toBeVisible();
-  await page.getByLabel('Purdue email').fill('browser@purdue.edu');
+  await expect(page.getByLabel('Purdue email')).toHaveValue('browser@purdue.edu');
+  await expect(page.locator('.verified-email-badge')).toContainText('Verified');
+  await page.getByRole('button', { name: 'Review 2 prints', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your 2 prints', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Confirm & queue 2 prints', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Back to edit', exact: true }).click();
+  await page.getByLabel('Purdue email').fill('batch@purdue.edu');
+  await expect(page.locator('.verified-email-badge')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Review 2 prints', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your 2 prints', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Send confirmation email' }).click();
   await expect(
     page.getByRole('heading', { name: 'Check your email' }),
@@ -706,6 +726,9 @@ try {
     .fill('Unit conversion regression');
   await unitsPage.getByLabel('Purdue email').fill('units@purdue.edu');
   await unitsPage
+    .getByRole('button', { name: 'Review print', exact: true })
+    .click();
+  await unitsPage
     .getByRole('button', { name: 'Send confirmation email' })
     .click();
   await expect(
@@ -819,6 +842,33 @@ try {
     httpPage.getByText('Could not load engine manifest (503)'),
   ).toBeVisible();
   await httpPage.close();
+  // Returning verified user skips email confirmation and queues immediately
+  const messagesBeforeVerified = h.messages.length;
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto(h.origin + '/submit');
+  await expect(page.getByLabel('Purdue email')).toHaveValue('batch@purdue.edu');
+  await expect(page.locator('.verified-email-badge')).toContainText('Verified');
+  await page.getByLabel('Project / part title').fill('Verified instant bracket');
+  await page.getByLabel('STL file', { exact: true }).setInputFiles({
+    name: 'instant.stl',
+    mimeType: 'application/octet-stream',
+    buffer: await readFile(
+      new URL('../tests/support-bracket.stl', import.meta.url),
+    ),
+  });
+  await page.getByRole('button', { name: 'Review print', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your print', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm & queue', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Print queued' }),
+  ).toBeVisible();
+  expect(h.messages.length).toBe(messagesBeforeVerified);
+  await page.goto(h.origin);
+  await expect(
+    page.getByRole('heading', { name: 'Verified instant bracket' }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
   console.log(
     'Browser flow passed: worker/WebGL preview, HTTP slicing/orientation, submit/confirm, operator updates, returns with feedback, email warning, and mobile layout.',

@@ -26,7 +26,7 @@ async function loadAllowedMaterials() {
   return allowedMaterials;
 }
 
-export async function reserve(input: unknown) {
+export async function reserve(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
   const data = metadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const id = randomUUID(), expires = now + config().uploadTTL;
@@ -41,10 +41,11 @@ export async function reserve(input: unknown) {
     WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < ${MAX_BATCH_SIZE * 3}
     RETURNING id`;
   invariant(rows.length, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
-  return { id, capability };
+  const verified = Boolean(verifiedEmail && verifiedEmail.toLowerCase() === data.email.toLowerCase());
+  return { id, capability, verified };
 }
 
-export async function reserveBatch(input: unknown) {
+export async function reserveBatch(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
   const itemsData = batchMetadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const expires = now + config().uploadTTL;
@@ -74,11 +75,18 @@ export async function reserveBatch(input: unknown) {
         ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
         'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name})`;
   }
-  return { batchId, batchTitle, groupName, items, batchToken };
+  const verified = Boolean(verifiedEmail && verifiedEmail.toLowerCase() === itemsData[0].email.toLowerCase());
+  return { batchId, batchTitle, groupName, items, batchToken, verified };
 }
 
 let activeUploads = 0;
-export async function upload(id: string, token: string, request: Request, mailer: Mailer = sendMail, { deferEmail = false }: { deferEmail?: boolean } = {}) {
+export async function upload(
+  id: string,
+  token: string,
+  request: Request,
+  mailer: Mailer = sendMail,
+  { deferEmail = false, verifiedEmail = null }: { deferEmail?: boolean; verifiedEmail?: string | null } = {},
+) {
   const payload = unseal(token, 'upload');
   invariant(payload.id === id && payload.ids.length === 1, 403, 'This upload link belongs to another print.');
   const sql = await db();
@@ -98,12 +106,25 @@ export async function upload(id: string, token: string, request: Request, mailer
     if (deferEmail) {
       return { id, uploaded: true };
     }
+    if (verifiedEmail && verifiedEmail.toLowerCase() === updated.email.toLowerCase()) {
+      const now = Date.now();
+      const [queuedJob] = await sql`UPDATE jobs
+        SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
+        WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+        RETURNING *`;
+      invariant(queuedJob, 410, 'The submission expired. Please submit again.');
+      return {
+        confirmed: true,
+        job: queuedJob,
+        message: 'Your print is queued. We’ll email you when the operator changes its status.',
+      };
+    }
     try { await mailer(confirmationMessage(updated, seal(id, 'confirm', expiry)), { jobId: id, purpose: 'confirmation' }); }
     catch (cause) { throw new HttpError(502, 'We could not send the confirmation email. Your submission was removed; please try again later.', { cause }); }
     const ready = await sql`UPDATE jobs SET upload_state = 'ready'
       WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
     invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
-    return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
+    return { confirmed: false, message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
   } catch (e) {
     logFailure('submission.failed', e, { jobId: id });
     if (claimed) {
@@ -119,7 +140,11 @@ export async function upload(id: string, token: string, request: Request, mailer
   } finally { activeUploads--; }
 }
 
-export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMail) {
+export async function finalizeBatch(
+  batchToken: string,
+  mailer: Mailer = sendMail,
+  { verifiedEmail = null }: { verifiedEmail?: string | null } = {},
+) {
   const payload = unseal(batchToken, 'upload');
   const ids = payload.ids;
   const sql = await db();
@@ -133,6 +158,24 @@ export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMai
   }
   const expiry = Date.now() + 86400000;
   try {
+    if (verifiedEmail && jobs.every(j => j.email.toLowerCase() === verifiedEmail.toLowerCase())) {
+      const now = Date.now();
+      const updatedJobs: Job[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const [queuedJob]: Job[] = await sql`UPDATE jobs
+          SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+          WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+          RETURNING *`;
+        invariant(queuedJob, 410, 'The batch upload expired. Please try again.');
+        updatedJobs.push(queuedJob);
+      }
+      return {
+        confirmed: true,
+        jobs: updatedJobs,
+        message: 'Your prints are grouped and queued. We’ll email you when an operator changes their status.',
+      };
+    }
     for (const id of ids) {
       const updated = await sql`UPDATE jobs SET pending_expires_at = ${expiry}
         WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${Date.now()} RETURNING id`;
@@ -148,7 +191,7 @@ export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMai
         WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
       invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
     }
-    return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
+    return { confirmed: false, message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
   } catch (e) {
     logFailure('submission.failed', e, { jobId: ids[0] });
     try {

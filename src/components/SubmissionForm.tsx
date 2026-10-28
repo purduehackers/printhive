@@ -1,8 +1,9 @@
-import { lazy, Suspense, useRef, useState, type SubmitEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type SubmitEvent } from 'react';
 import {
   MAX_BATCH_SIZE,
   MAX_FILE_BYTES,
   resolveColor,
+  supportLabel,
   type Material,
 } from '../lib/shared';
 import { IDENTITY_ROTATION } from '@time-estimator/browser-preview/pose';
@@ -36,10 +37,18 @@ const DEFAULT_MATERIALS: Material[] = [
   },
 ];
 
+const VERIFIED_EMAIL_STORAGE_KEY = 'printhive_verified_email';
+
 export default function SubmissionForm({
   initialMaterials,
+  initialVerifiedEmail = null,
+  initialVerifiedToken = null,
+  initialVerifiedExpires = null,
 }: {
   initialMaterials?: Material[];
+  initialVerifiedEmail?: string | null;
+  initialVerifiedToken?: string | null;
+  initialVerifiedExpires?: number | null;
 }) {
   const materials =
     initialMaterials && initialMaterials.length > 0
@@ -62,10 +71,75 @@ export default function SubmissionForm({
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(0),
     [message, setMessage] = useState(''),
-    [success, setSuccess] = useState(false);
+    [success, setSuccess] = useState(false),
+    [autoConfirmed, setAutoConfirmed] = useState(false),
+    [reviewing, setReviewing] = useState(false);
   const xhrRef = useRef<XMLHttpRequest | null>(null),
     controllerRef = useRef<AbortController | null>(null);
-  const [email, setEmail] = useState('');
+  const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(
+    initialVerifiedEmail ? initialVerifiedEmail.toLowerCase() : null,
+  );
+  const [verifiedToken, setVerifiedToken] = useState<string | null>(
+    initialVerifiedToken,
+  );
+  const [email, setEmail] = useState(
+    initialVerifiedEmail ? initialVerifiedEmail.toLowerCase() : '',
+  );
+
+  useEffect(() => {
+    try {
+      if (initialVerifiedEmail && initialVerifiedToken) {
+        localStorage.setItem(
+          VERIFIED_EMAIL_STORAGE_KEY,
+          JSON.stringify({
+            email: initialVerifiedEmail.toLowerCase(),
+            token: initialVerifiedToken,
+            expires:
+              initialVerifiedExpires ??
+              Date.now() + 30 * 24 * 60 * 60 * 1000,
+          }),
+        );
+        return;
+      }
+      const raw = localStorage.getItem(VERIFIED_EMAIL_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        typeof parsed.email === 'string' &&
+        typeof parsed.token === 'string' &&
+        (!parsed.expires || parsed.expires > Date.now())
+      ) {
+        const normalized = parsed.email.toLowerCase();
+        setVerifiedEmail(normalized);
+        setVerifiedToken(parsed.token);
+        setEmail((current) => current || normalized);
+      } else {
+        localStorage.removeItem(VERIFIED_EMAIL_STORAGE_KEY);
+      }
+    } catch {
+      /* Ignore storage errors */
+    }
+  }, [initialVerifiedEmail, initialVerifiedToken, initialVerifiedExpires]);
+
+  const isEmailVerified = Boolean(
+    verifiedEmail &&
+      email.trim().toLowerCase() === verifiedEmail.toLowerCase(),
+  );
+
+  async function forgetVerifiedEmail() {
+    setVerifiedEmail(null);
+    setVerifiedToken(null);
+    setEmail('');
+    try {
+      localStorage.removeItem(VERIFIED_EMAIL_STORAGE_KEY);
+    } catch {}
+    try {
+      await fetch('/api/verified-email', { method: 'DELETE' });
+    } catch {}
+  }
 
   const activeFile = files[activeIndex] ?? files[0] ?? null;
   const activeRotation = activeFile
@@ -233,8 +307,9 @@ export default function SubmissionForm({
     targetFile: File,
     isBatch: boolean,
     onBytes: (loaded: number) => void,
+    tokenForVerifiedEmail?: string | null,
   ) {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<{ confirmed?: boolean }>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhrRef.current = xhr;
       xhr.open(
@@ -243,6 +318,9 @@ export default function SubmissionForm({
       );
       xhr.setRequestHeader('Authorization', `Bearer ${capability}`);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (tokenForVerifiedEmail) {
+        xhr.setRequestHeader('X-Verified-Email-Token', tokenForVerifiedEmail);
+      }
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) onBytes(event.loaded);
       };
@@ -258,7 +336,7 @@ export default function SubmissionForm({
           );
           return;
         }
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        if (xhr.status >= 200 && xhr.status < 300) resolve(result);
         else reject(new Error(result.error ?? 'Upload failed.'));
       };
       xhr.onerror = () =>
@@ -274,10 +352,12 @@ export default function SubmissionForm({
       files.length === 0 ||
       files.some((f) => f.size > MAX_FILE_BYTES || f.size === 0)
     ) {
+      setReviewing(false);
       setMessage('Choose at least one STL between 1 byte and 500 MiB.');
       return;
     }
     if (files.length > MAX_BATCH_SIZE) {
+      setReviewing(false);
       setMessage(`Choose up to ${MAX_BATCH_SIZE} STL files per batch.`);
       return;
     }
@@ -286,6 +366,7 @@ export default function SubmissionForm({
     );
     const invalid = settings.findIndex((value) => partScale(value) === null);
     if (invalid !== -1) {
+      setReviewing(false);
       setActiveIndex(invalid);
       setFileOptionsOpen(true);
       setMoreSettingsOpen(true);
@@ -298,6 +379,7 @@ export default function SubmissionForm({
       (value) => partSupportAngle(value) === null,
     );
     if (invalidAngle !== -1) {
+      setReviewing(false);
       setActiveIndex(invalidAngle);
       setFileOptionsOpen(true);
       setMoreSettingsOpen(true);
@@ -306,10 +388,18 @@ export default function SubmissionForm({
       );
       return;
     }
-    // Check all parts first so an invalid field can be revealed before native
-    // title/email/default-setting validation tries to focus a hidden control.
-    if (!event.currentTarget.reportValidity()) return;
-    const fields = new FormData(event.currentTarget);
+    if (!reviewing) {
+      // Check all parts first so an invalid field can be revealed before native
+      // title/email/default-setting validation tries to focus a hidden control.
+      if (!event.currentTarget.reportValidity()) return;
+      setMessage('');
+      setReviewing(true);
+      window.scrollTo?.({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const trimmedTitle = title.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedNotes = notes.trim();
     setBusy(true);
     setMessage('');
     setProgress(0);
@@ -332,17 +422,21 @@ export default function SubmissionForm({
         throw new Error('The oriented STL exceeds 500 MiB.');
       const totalBytes = uploadFiles.reduce((sum, file) => sum + file.size, 0);
       setPreparing(false);
+      const activeVerifiedToken = isEmailVerified ? verifiedToken : null;
+      const verifiedHeaders: Record<string, string> = activeVerifiedToken
+        ? { 'X-Verified-Email-Token': activeVerifiedToken }
+        : {};
       if (files.length === 1) {
         const singleFile = uploadFiles[0];
         const selected = settings[0];
         const response = await fetch('/api/submissions', {
           method: 'POST',
           signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...verifiedHeaders },
           body: JSON.stringify({
-            title: fields.get('title'),
-            email: fields.get('email'),
-            notes: fields.get('notes'),
+            title: trimmedTitle,
+            email: trimmedEmail,
+            notes: trimmedNotes,
             original_filename: singleFile.name,
             file_size: singleFile.size,
             infill: selected.infill,
@@ -358,7 +452,7 @@ export default function SubmissionForm({
         const reservation = await response.json();
         if (!response.ok) throw new Error(reservation.error);
         if (controller.signal.aborted) throw new Error('Upload canceled.');
-        await uploadFile(
+        const uploadRes = await uploadFile(
           reservation.id,
           reservation.capability,
           singleFile,
@@ -366,16 +460,18 @@ export default function SubmissionForm({
           (loaded) => {
             setProgress(Math.round((loaded / totalBytes) * 100));
           },
+          activeVerifiedToken,
         );
+        setAutoConfirmed(Boolean(uploadRes?.confirmed));
       } else {
         const response = await fetch('/api/submissions/batch', {
           method: 'POST',
           signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...verifiedHeaders },
           body: JSON.stringify({
-            title: fields.get('title'),
-            email: fields.get('email'),
-            notes: fields.get('notes'),
+            title: trimmedTitle,
+            email: trimmedEmail,
+            notes: trimmedNotes,
             infill: globalSettings.infill,
             material: globalSettings.material,
             color: globalSettings.color,
@@ -413,6 +509,7 @@ export default function SubmissionForm({
                 Math.round(((completedBytes + loaded) / totalBytes) * 100),
               );
             },
+            activeVerifiedToken,
           );
           completedBytes += targetFile.size;
           setProgress(Math.round((completedBytes / totalBytes) * 100));
@@ -420,11 +517,15 @@ export default function SubmissionForm({
         const finalizeRes = await fetch('/api/submissions/batch/finalize', {
           method: 'POST',
           signal: controller.signal,
-          headers: { Authorization: `Bearer ${reservation.batchToken}` },
+          headers: {
+            Authorization: `Bearer ${reservation.batchToken}`,
+            ...verifiedHeaders,
+          },
         });
         const finalizeBody = await finalizeRes.json();
         if (!finalizeRes.ok)
           throw new Error(finalizeBody.error ?? 'Failed to finalize batch.');
+        setAutoConfirmed(Boolean(finalizeBody?.confirmed));
       }
       setSuccess(true);
     } catch (e) {
@@ -514,7 +615,26 @@ export default function SubmissionForm({
     </fieldset>
   );
   if (success)
-    return (
+    return autoConfirmed ? (
+      <section className="receipt">
+        <h2>{files.length > 1 ? 'Prints queued' : 'Print queued'}</h2>
+        <p>
+          {files.length > 1
+            ? `Your ${files.length} prints are grouped and queued. We’ll email `
+            : 'Your print is queued. We’ll email '}
+          <strong>{email}</strong>{' '}
+          {files.length > 1
+            ? 'when an operator changes their status.'
+            : 'when the operator changes its status.'}
+        </p>
+        <a href="/" className="button primary">
+          Back to queue
+        </a>
+        <a href="/submit" className="text-button">
+          Submit another print
+        </a>
+      </section>
+    ) : (
       <section className="receipt">
         <h2>Check your email</h2>
         <p>
@@ -544,172 +664,395 @@ export default function SubmissionForm({
         </a>
       </section>
     );
+  const reviewSettings = files.map((file) =>
+    resolvePartSettings(globalSettings, fileOptions.get(file), materials),
+  );
   return (
     <form noValidate onSubmit={submit} className="submission-grid">
       <div>
-        <fieldset disabled={busy} className="form-section">
-          <legend>Part details</legend>
-          <label>
-            Project / part title
-            <input name="title" required maxLength={200} autoComplete="off" />
-          </label>
-          <label className="file-drop">
-            <strong>
-              {files.length === 0
-                ? 'Choose your STL file(s)'
-                : files.length === 1
-                  ? files[0].name
-                  : `${files.length} STL files selected`}
-            </strong>
-            <span className="small muted">
-              {files.length === 0
-                ? `ASCII or binary STL · Up to 500 MiB each (up to ${MAX_BATCH_SIZE} files)`
-                : files.length === 1
-                  ? `${(files[0].size / 1024 ** 2).toFixed(2)} MiB · Click to add more or replace`
-                  : `${(files.reduce((s, f) => s + f.size, 0) / 1024 ** 2).toFixed(2)} MiB total · Click to add more files`}
-            </span>
-            <input
-              type="file"
-              accept=".stl"
-              multiple
-              required={files.length === 0}
-              aria-label="STL file"
-              onChange={handleFileChange}
-            />
-          </label>
-          {files.length > 0 && (
-            <div className="batch-file-list" aria-label="Selected STL files">
-              <div className="batch-file-list-header">
+        {reviewing ? (
+          <section className="review-panel" aria-label="Review submission">
+            <div className="review-header">
+              <div>
+                <p className="eyebrow">Step 2 of 2 · Review before submitting</p>
+                <h2>
+                  {files.length > 1
+                    ? `Review your ${files.length} prints`
+                    : 'Review your print'}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="text-button"
+                disabled={busy}
+                onClick={() => {
+                  setReviewing(false);
+                  setMessage('');
+                }}
+              >
+                Edit settings
+              </button>
+            </div>
+            <p className="small muted review-intro">
+              Verify that your part settings, 3D orientation, and contact
+              details are correct before{' '}
+              {isEmailVerified
+                ? 'committing to the print queue.'
+                : 'sending your confirmation email.'}
+            </p>
+
+            <div className="detail-card review-card">
+              <h3>Submission details</h3>
+              <dl className="settings-grid review-overview-grid">
+                <div>
+                  <dt>
+                    {files.length > 1 ? 'Batch / project title' : 'Part title'}
+                  </dt>
+                  <dd className="review-value-text">{title.trim()}</dd>
+                </div>
+                <div>
+                  <dt>Purdue email</dt>
+                  <dd className="review-value-text">
+                    <span>{email.trim()}</span>
+                    {isEmailVerified && (
+                      <span className="verified-email-badge">✓ Verified</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Total parts</dt>
+                  <dd className="review-value-text">
+                    {files.length} {files.length === 1 ? 'file' : 'files'} (
+                    {reviewSettings.reduce((sum, s) => sum + s.copies, 0)}{' '}
+                    {reviewSettings.reduce((sum, s) => sum + s.copies, 0) === 1
+                      ? 'copy'
+                      : 'copies'}
+                    )
+                  </dd>
+                </div>
+              </dl>
+              <div className="review-notes-block">
+                <span className="review-notes-label">Operator notes</span>
+                <p className="operator-notes">
+                  {notes.trim() || 'No notes provided.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="review-parts-list" aria-label="Parts to submit">
+              {files.map((f, i) => {
+                const part = reviewSettings[i];
+                const matObj =
+                  materials.find(
+                    (m) => m.name.toLowerCase() === part.material.toLowerCase(),
+                  ) ?? materials[0];
+                const colorCode = matObj?.colors.find(
+                  (c) => c.name.toLowerCase() === part.color.toLowerCase(),
+                )?.code;
+                const swatchHex = resolveColor(part.color, colorCode);
+                const stem =
+                  f.name.replace(/\.stl$/i, '').trim() || `Part ${i + 1}`;
+                const partTitle =
+                  files.length > 1
+                    ? `${title.trim()} · ${stem}`
+                    : title.trim();
+                const rot = orientations.get(f) ?? DEFAULT_ROTATION;
+                const isRotated = rot.some(
+                  (val, idx) => Math.abs(val - DEFAULT_ROTATION[idx]) > 1e-5,
+                );
+                const angle = partSupportAngle(part);
+                return (
+                  <div
+                    key={`${f.name}-${i}`}
+                    className={`detail-card review-part-card${i === activeIndex ? ' active' : ''}`}
+                  >
+                    <div className="review-part-header">
+                      <div className="review-part-heading">
+                        <h3>{partTitle}</h3>
+                        <span className="small muted">
+                          {f.name} · {(f.size / 1024 ** 2).toFixed(2)} MiB
+                        </span>
+                      </div>
+                      {files.length > 1 && (
+                        <button
+                          type="button"
+                          className={`button secondary review-preview-btn${i === activeIndex ? ' is-active' : ''}`}
+                          onClick={() => setActiveIndex(i)}
+                          aria-pressed={i === activeIndex}
+                        >
+                          {i === activeIndex
+                            ? 'Previewing in 3D'
+                            : 'Preview in 3D'}
+                        </button>
+                      )}
+                    </div>
+                    <dl className="settings-grid review-settings-grid">
+                      <div>
+                        <dt>Material</dt>
+                        <dd>{part.material}</dd>
+                      </div>
+                      <div>
+                        <dt>Filament</dt>
+                        <dd>
+                          <i
+                            className={`swatch ${part.color.toLowerCase()}`}
+                            style={{ backgroundColor: swatchHex }}
+                          />
+                          {part.color}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Infill</dt>
+                        <dd>{part.infill}%</dd>
+                      </div>
+                      <div>
+                        <dt>Layer height</dt>
+                        <dd className="review-value-text">
+                          {part.layerHeight} mm
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Supports</dt>
+                        <dd>{supportLabel(part.supports)}</dd>
+                      </div>
+                      <div>
+                        <dt>Support angle</dt>
+                        <dd>
+                          {angle === null ? 'Printer default' : `${angle}°`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Copies</dt>
+                        <dd>{part.copies}</dd>
+                      </div>
+                      <div>
+                        <dt>Mirror X</dt>
+                        <dd>{part.mirror ? 'Mirrored' : 'Normal'}</dd>
+                      </div>
+                      <div>
+                        <dt>Scale &amp; units</dt>
+                        <dd className="review-value-text">
+                          {part.scalePercent}% ({part.units})
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Orientation</dt>
+                        <dd>{isRotated ? 'Custom oriented' : 'Original'}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : (
+          <>
+            <fieldset disabled={busy} className="form-section">
+              <legend>Part details</legend>
+              <label>
+                Project / part title
+                <input
+                  name="title"
+                  required
+                  maxLength={200}
+                  autoComplete="off"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </label>
+              <label className="file-drop">
+                <strong>
+                  {files.length === 0
+                    ? 'Choose your STL file(s)'
+                    : files.length === 1
+                      ? files[0].name
+                      : `${files.length} STL files selected`}
+                </strong>
                 <span className="small muted">
-                  {files.length === 1
-                    ? '1 file ready for submission'
-                    : `${files.length} files in batch (click a file to preview)`}
+                  {files.length === 0
+                    ? `ASCII or binary STL · Up to 500 MiB each (up to ${MAX_BATCH_SIZE} files)`
+                    : files.length === 1
+                      ? `${(files[0].size / 1024 ** 2).toFixed(2)} MiB · Click to add more or replace`
+                      : `${(files.reduce((s, f) => s + f.size, 0) / 1024 ** 2).toFixed(2)} MiB total · Click to add more files`}
                 </span>
-                {files.length > 1 && (
+                <input
+                  type="file"
+                  accept=".stl"
+                  multiple
+                  required={files.length === 0}
+                  aria-label="STL file"
+                  onChange={handleFileChange}
+                />
+              </label>
+              {files.length > 0 && (
+                <div
+                  className="batch-file-list"
+                  aria-label="Selected STL files"
+                >
+                  <div className="batch-file-list-header">
+                    <span className="small muted">
+                      {files.length === 1
+                        ? '1 file ready for submission'
+                        : `${files.length} files in batch (click a file to preview)`}
+                    </span>
+                    {files.length > 1 && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={() => {
+                          setFiles([]);
+                          setOrientations(new Map());
+                          setFileOptions(new Map());
+                          setActiveIndex(0);
+                        }}
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                  <ul>
+                    {files.map((f, i) => (
+                      <li
+                        key={`${f.name}-${i}`}
+                        className={i === activeIndex ? 'active' : ''}
+                      >
+                        <div className="batch-file-row">
+                          <button
+                            type="button"
+                            className="batch-file-select"
+                            onClick={() => {
+                              setFileOptionsOpen(
+                                i === activeIndex ? !fileOptionsOpen : true,
+                              );
+                              setActiveIndex(i);
+                            }}
+                            aria-expanded={i === activeIndex && fileOptionsOpen}
+                            aria-controls={`file-options-${i}`}
+                            aria-pressed={i === activeIndex}
+                          >
+                            <span className="batch-file-details">
+                              <span className="batch-file-name">{f.name}</span>
+                              <span className="batch-file-options-summary">
+                                {fileOptions.get(f)?.copies ?? 1}{' '}
+                                {(fileOptions.get(f)?.copies ?? 1) === 1
+                                  ? 'copy'
+                                  : 'copies'}
+                                {fileOptions.get(f)?.mirror && ' · Mirrored'}
+                                {Object.keys(fileOptions.get(f)?.overrides ?? {})
+                                  .length > 0 && ' · Custom settings'}
+                                {i === activeIndex && ' · Previewing'}
+                              </span>
+                            </span>
+                            <span className="batch-file-size mono">
+                              {(f.size / 1024 ** 2).toFixed(2)} MiB
+                            </span>
+                            <span
+                              className="file-options-chevron"
+                              aria-hidden="true"
+                            >
+                              ›
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="batch-file-remove"
+                            aria-label={`Remove ${f.name}`}
+                            onClick={() => removeFileAt(i)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div
+                          id={`file-options-${i}`}
+                          className="batch-file-options"
+                          hidden={i !== activeIndex || !fileOptionsOpen}
+                        >
+                          {i === activeIndex && fileOptionsPanel}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <fieldset
+                className="default-settings"
+                aria-label="Default settings"
+              >
+                <legend>Default settings</legend>
+                <p className="small muted">
+                  Used for all files unless a file has its own settings.
+                </p>
+                <PartSettingsFields
+                  global={globalSettings}
+                  materials={materials}
+                  onChange={updateGlobalSettings}
+                />
+              </fieldset>
+              <label>
+                Notes for the operator{' '}
+                <span className="optional">Optional</span>
+                <textarea
+                  name="notes"
+                  maxLength={5000}
+                  rows={3}
+                  placeholder="Orientation, fit, or other requirements"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </label>
+            </fieldset>
+            <fieldset disabled={busy} className="form-section">
+              <legend>Contact</legend>
+              <label>
+                <span className="contact-label-row">
+                  <span>Purdue email</span>
+                  {isEmailVerified && (
+                    <span className="verified-email-badge" role="status">
+                      ✓ Verified
+                    </span>
+                  )}
+                </span>
+                <input
+                  name="email"
+                  type="email"
+                  aria-label="Purdue email"
+                  required
+                  maxLength={254}
+                  pattern="[^@\s]+@purdue\.edu"
+                  autoComplete="email"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  placeholder="you@purdue.edu"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                />
+              </label>
+              {isEmailVerified ? (
+                <p className="small muted contact-verified-note">
+                  <span>
+                    Your email is verified on this browser — prints join the
+                    queue immediately without a confirmation email. We’ll email
+                    you when an operator changes their status.
+                  </span>
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => {
-                      setFiles([]);
-                      setOrientations(new Map());
-                      setFileOptions(new Map());
-                      setActiveIndex(0);
-                    }}
+                    onClick={forgetVerifiedEmail}
                   >
-                    Clear all
+                    Forget saved email
                   </button>
-                )}
-              </div>
-              <ul>
-                {files.map((f, i) => (
-                  <li
-                    key={`${f.name}-${i}`}
-                    className={i === activeIndex ? 'active' : ''}
-                  >
-                    <div className="batch-file-row">
-                      <button
-                        type="button"
-                        className="batch-file-select"
-                        onClick={() => {
-                          setFileOptionsOpen(
-                            i === activeIndex ? !fileOptionsOpen : true,
-                          );
-                          setActiveIndex(i);
-                        }}
-                        aria-expanded={i === activeIndex && fileOptionsOpen}
-                        aria-controls={`file-options-${i}`}
-                        aria-pressed={i === activeIndex}
-                      >
-                        <span className="batch-file-details">
-                          <span className="batch-file-name">{f.name}</span>
-                          <span className="batch-file-options-summary">
-                            {fileOptions.get(f)?.copies ?? 1}{' '}
-                            {(fileOptions.get(f)?.copies ?? 1) === 1
-                              ? 'copy'
-                              : 'copies'}
-                            {fileOptions.get(f)?.mirror && ' · Mirrored'}
-                            {Object.keys(fileOptions.get(f)?.overrides ?? {})
-                              .length > 0 && ' · Custom settings'}
-                            {i === activeIndex && ' · Previewing'}
-                          </span>
-                        </span>
-                        <span className="batch-file-size mono">
-                          {(f.size / 1024 ** 2).toFixed(2)} MiB
-                        </span>
-                        <span
-                          className="file-options-chevron"
-                          aria-hidden="true"
-                        >
-                          ›
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="batch-file-remove"
-                        aria-label={`Remove ${f.name}`}
-                        onClick={() => removeFileAt(i)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div
-                      id={`file-options-${i}`}
-                      className="batch-file-options"
-                      hidden={i !== activeIndex || !fileOptionsOpen}
-                    >
-                      {i === activeIndex && fileOptionsPanel}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <fieldset className="default-settings" aria-label="Default settings">
-            <legend>Default settings</legend>
-            <p className="small muted">
-              Used for all files unless a file has its own settings.
-            </p>
-            <PartSettingsFields
-              global={globalSettings}
-              materials={materials}
-              onChange={updateGlobalSettings}
-            />
-          </fieldset>
-          <label>
-            Notes for the operator <span className="optional">Optional</span>
-            <textarea
-              name="notes"
-              maxLength={5000}
-              rows={3}
-              placeholder="Orientation, fit, or other requirements"
-            />
-          </label>
-        </fieldset>
-        <fieldset disabled={busy} className="form-section">
-          <legend>Contact</legend>
-          <label>
-            Purdue email
-            <input
-              name="email"
-              type="email"
-              required
-              maxLength={254}
-              pattern="[^@\s]+@purdue\.edu"
-              autoComplete="email"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder="you@purdue.edu"
-              value={email}
-              onChange={(e) => setEmail(e.target.value.toLowerCase())}
-            />
-          </label>
-          <p className="small muted">
-            We’ll send a confirmation link and print updates here. Your email
-            and operator notes are private. Your title and print settings are
-            public after confirmation.
-          </p>
-        </fieldset>
+                </p>
+              ) : (
+                <p className="small muted">
+                  We’ll send a confirmation link and print updates here. Your
+                  email and operator notes are private. Your title and print
+                  settings are public after confirmation.
+                </p>
+              )}
+            </fieldset>
+          </>
+        )}
         {message && (
           <p className="notice error" role="alert">
             {message}
@@ -723,18 +1066,43 @@ export default function SubmissionForm({
                 ? 'Saving orientation…'
                 : progress < 100
                   ? `Uploading your STL${files.length > 1 ? 's' : ''}… ${progress}%`
-                  : `Validating your STL${files.length > 1 ? 's' : ''} and sending your confirmation email…`}
+                  : isEmailVerified
+                    ? `Validating and queueing your STL${files.length > 1 ? 's' : ''}…`
+                    : `Validating your STL${files.length > 1 ? 's' : ''} and sending your confirmation email…`}
             </p>
           </div>
         )}
         <div className="form-actions">
-          <button className="button primary" type="submit" disabled={busy}>
-            {busy
-              ? files.length > 1
-                ? 'Sending your prints…'
-                : 'Sending your print…'
-              : 'Send confirmation email'}
-          </button>
+          {reviewing ? (
+            <>
+              <button className="button primary" type="submit" disabled={busy}>
+                {busy
+                  ? files.length > 1
+                    ? 'Sending your prints…'
+                    : 'Sending your print…'
+                  : isEmailVerified
+                    ? files.length > 1
+                      ? `Confirm & queue ${files.length} prints`
+                      : 'Confirm & queue'
+                    : 'Send confirmation email'}
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={busy}
+                onClick={() => {
+                  setReviewing(false);
+                  setMessage('');
+                }}
+              >
+                Back to edit
+              </button>
+            </>
+          ) : (
+            <button className="button primary" type="submit" disabled={busy}>
+              {files.length > 1 ? `Review ${files.length} prints` : 'Review print'}
+            </button>
+          )}
           {busy && (
             <button
               type="button"
@@ -749,7 +1117,15 @@ export default function SubmissionForm({
           )}
         </div>
         <p className="small muted">
-          Confirm the email link within 24 hours to join the queue.
+          {reviewing
+            ? isEmailVerified
+              ? 'Your email is verified on this browser — confirming places your print directly in the queue.'
+              : 'Confirm the email link within 24 hours to join the queue.'
+            : `Review your settings and 3D preview on the next screen before ${
+                isEmailVerified
+                  ? 'adding to the queue.'
+                  : 'sending a confirmation email.'
+              }`}
         </p>
       </div>
       <aside className="preview-column">

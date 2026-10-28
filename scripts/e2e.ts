@@ -30,6 +30,11 @@ try {
   const token = new URL(url).searchParams.get('token')!;
   const confirm = await fetch(h.origin + '/confirm', { method: 'POST', headers: { Origin: h.origin }, body: new URLSearchParams({ token }) });
   assert.equal(confirm.status, 200, await confirm.clone().text()); assert.match(await confirm.text(), /Print queued/);
+  const verifiedSetCookie = confirm.headers.get('set-cookie')!;
+  assert.match(verifiedSetCookie, /^printhive_verified_email=/);
+  assert.match(verifiedSetCookie, /HttpOnly/i);
+  assert.match(verifiedSetCookie, /SameSite=Lax/i);
+  const verifiedCookie = verifiedSetCookie.split(';')[0];
   const publicJob = (await queue())[0]; assert.equal(publicJob.id, one.id); assert.equal(publicJob.email, undefined); assert.equal(publicJob.notes, undefined);
   assert.equal((await fetch(`${h.origin}/api/jobs/${one.id}/file`)).status, 401);
   const login = await post('/api/login', { username: 'operator', password: 'test-password-12345' }); assert.equal(login.status, 200);
@@ -79,6 +84,22 @@ try {
   const rejectedJobs = await fetch(h.origin + '/operator?status=rejected', { headers: { Cookie: cookie } });
   assert.equal((await rejectedJobs.text()).includes('Production stream test'), true);
   assert.equal((await queue()).length, 0);
+  // Verified email cookie queues a print immediately without sending another confirmation email
+  const messagesBeforeAuto = h.messages.length;
+  const smallStl = new Blob([binarySTL()]);
+  const autoReserve = await post('/api/submissions', submission({ title: 'Auto-verified submission', file_size: smallStl.size }), verifiedCookie);
+  assert.equal(autoReserve.status, 201);
+  const { id: autoId, capability: autoCap, verified: isVerified } = await autoReserve.json();
+  assert.equal(isVerified, true);
+  const autoUpload = await fetch(`${h.origin}/api/submissions/${autoId}/file`, {
+    method: 'PUT',
+    headers: { Origin: h.origin, Authorization: `Bearer ${autoCap}`, Cookie: verifiedCookie, 'Content-Type': 'application/octet-stream', 'Content-Length': String(smallStl.size) },
+    body: smallStl.stream(),
+  });
+  assert.equal(autoUpload.status, 200);
+  assert.equal((await autoUpload.json()).confirmed, true);
+  assert.equal(h.messages.length, messagesBeforeAuto);
+  assert.equal((await queue())[0]?.id, autoId);
   if (process.env.LARGE_UPLOAD_TEST === '1') {
     const count = Math.floor((500 * 1024 ** 2 - 84) / 50), path = join(h.dir, 'large-fixture.stl');
     const writer = Bun.file(path).writer(), header = new Uint8Array(84); new DataView(header.buffer).setUint32(80, count, true); writer.write(header);
