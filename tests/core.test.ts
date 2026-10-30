@@ -23,6 +23,11 @@ const mailer = async (mail: { text: string }) => { accepted.push(mail.text); };
 const rejected = async () => { throw new Error('SMTP unavailable'); };
 const body = (text: BodyInit = asciiSTL) => new Request('http://localhost:4321/file', { method: 'PUT', body: text });
 const confirmationToken = () => new URL(accepted.at(-1)!.match(/http[^\s]+\/confirm\?token=[^\s]+/)![0]).searchParams.get('token')!;
+function tamperToken(token: string) {
+  const bytes = Buffer.from(token, 'base64url');
+  bytes[0] ^= 1;
+  return bytes.toString('base64url');
+}
 async function ready() { const r = await reserve(submission()); await upload(r.id, r.capability, body(), mailer); return { ...r, token: confirmationToken() }; }
 async function queued() { const r = await ready(); await confirmation(r.token, true); return r; }
 beforeAll(async () => {
@@ -86,7 +91,9 @@ describe('authenticated links and confirmation', () => {
     expect(unseal(token, 'confirm', 1000).id).toBe(id);
     expect(() => unseal(token, 'upload', 1000)).toThrow();
     expect(() => unseal(token, 'confirm', 2000)).toThrow('expired');
-    expect(() => unseal('X' + token.slice(1), 'confirm', 1000)).toThrow('invalid');
+    const tampered = tamperToken(token);
+    expect(tampered).not.toBe(token);
+    expect(() => unseal(tampered, 'confirm', 1000)).toThrow('invalid');
     process.env.CONFIRMATION_SECRET = 'b'.repeat(64);
     expect(() => unseal(token, 'confirm', 1000)).toThrow('invalid');
     process.env.CONFIRMATION_SECRET = 'a'.repeat(64);
@@ -98,7 +105,9 @@ describe('authenticated links and confirmation', () => {
     expect(unsealVerifiedEmail(token, now)).toEqual({ email: 'student@purdue.edu', expires: now + VERIFIED_EMAIL_TTL });
     expect(unsealVerifiedEmail(token, now + VERIFIED_EMAIL_TTL - 1)?.email).toBe('student@purdue.edu');
     expect(unsealVerifiedEmail(token, now + VERIFIED_EMAIL_TTL)).toBeNull();
-    expect(unsealVerifiedEmail('X' + token.slice(1), now)).toBeNull();
+    const tampered = tamperToken(token);
+    expect(tampered).not.toBe(token);
+    expect(unsealVerifiedEmail(tampered, now)).toBeNull();
     expect(() => unseal(token, 'confirm', now)).toThrow();
     const confirmTok = seal(randomUUID(), 'confirm', now + 10000);
     expect(unsealVerifiedEmail(confirmTok, now)).toBeNull();
