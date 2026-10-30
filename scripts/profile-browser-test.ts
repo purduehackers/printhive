@@ -198,7 +198,8 @@ try {
   await ready();
   await page.getByRole('button', { name: /^core-part\.stl/ }).click();
   await ready();
-  await expect(page.getByText('Quick estimate · 50% extra time')).toBeVisible();
+  await expect(page.getByText('Quick estimate', { exact: true })).toBeVisible();
+  await expect(page.getByText(/extra time/)).toHaveCount(0);
   await expect(page.locator('.print-time strong')).toHaveText(
     formatPrintTime(applyPrintTimeAllowance(firstRawSeconds, 50), true),
   );

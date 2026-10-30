@@ -859,14 +859,7 @@ export default function Preview({
               For {printer.name}
             </span>
           )}
-          {preview && (
-            <span className="small muted">
-              Quick estimate
-              {timeAllowancePercent > 0
-                ? ` · ${timeAllowancePercent}% extra time`
-                : ""}
-            </span>
-          )}
+          {preview && <span className="small muted">Quick estimate</span>}
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
           )}

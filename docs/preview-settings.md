@@ -22,7 +22,8 @@ The H2D profile selects the right standard nozzle, not the high-flow variant or 
 Displayed times include **30% extra time** and round upward to the next minute.
 This is a user-requested planning allowance, not a calibration or a guaranteed upper
 bound. For example, a raw 44-minute estimate displays About 58 min after adding 30%
-and rounding up. The preview row states the percentage so it is not hidden.
+and rounding up. The public preview shows Quick estimate; the percentage remains
+an operator configuration in JSON.
 
 Edit the top-level `timeAllowancePercent` in either printer JSON to choose another
 percentage from 0 through 100; 0 disables the percentage allowance. Older files
