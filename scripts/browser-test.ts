@@ -178,7 +178,12 @@ try {
     page.getByRole('button', { name: 'Front', exact: true }),
   ).toBeEnabled();
   await expect(page.locator('.preview-viewport canvas')).toBeVisible();
-  const viewport = await page.locator('.preview-viewport canvas').boundingBox();
+  // Resetting orientation can replace the renderer between visibility and geometry reads.
+  let viewport = await page.locator('.preview-viewport canvas').boundingBox();
+  await expect.poll(async () => {
+    viewport = await page.locator('.preview-viewport canvas').boundingBox();
+    return viewport?.width ?? 0;
+  }).toBeGreaterThan(0);
   await page.mouse.move(
     viewport!.x + viewport!.width / 2,
     viewport!.y + viewport!.height / 2,
@@ -771,7 +776,7 @@ try {
     buffer: scaled(10),
   });
   await httpPage.getByRole('button', { name: /^large-bed\.stl/ }).click();
-  await expect(httpPage.locator('.preview-bed')).toContainText('Bambu H2D');
+  await expect(httpPage.locator('.preview-bed')).toContainText('Bambu H2D Pro');
   await expect(httpPage.locator('.preview-bed')).toContainText(
     '325 \u00d7 320 mm',
   );

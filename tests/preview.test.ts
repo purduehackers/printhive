@@ -7,6 +7,7 @@ import {
   selectPreviewPrinter,
   profileForPreviewBed,
   formatPrintTime,
+  applyPrintTimeAllowance,
 } from '../src/lib/preview';
 
 test('preview bed uses actual oriented axes and height, preferring Core ONE then single-nozzle H2D', () => {
@@ -141,4 +142,32 @@ test('incomplete timing profiles cannot inherit generic flow, speed, acceleratio
     parsePreviewProfile({ ...profile, configuration }, profile.printerId)
       .configuration.filament_max_volumetric_speed,
   ).toEqual(['0']);
+});
+
+test('the conservative allowance changes displayed time without invalidating raw slice caches', async () => {
+  const value = await Bun.file(
+    new URL('../public/preview-profiles/core-one.json', import.meta.url),
+  ).json();
+  const standard = parsePreviewProfile(value, value.printerId);
+  const larger = parsePreviewProfile(
+    { ...value, timeAllowancePercent: 50 },
+    value.printerId,
+  );
+  expect(standard.timeAllowancePercent).toBe(30);
+  expect(applyPrintTimeAllowance(44 * 60, 30)).toBeCloseTo(57.2 * 60);
+  expect(formatPrintTime(applyPrintTimeAllowance(44 * 60, 30), true)).toBe(
+    'About 58 min',
+  );
+  expect(applyPrintTimeAllowance(100, 0)).toBe(100);
+  expect(profileForPreviewBed(standard, PREVIEW_PRINTERS[0])).toEqual(
+    profileForPreviewBed(larger, PREVIEW_PRINTERS[0]),
+  );
+  expect(
+    profileForPreviewBed(standard, PREVIEW_PRINTERS[0]).configuration
+      .timeAllowancePercent,
+  ).toBeUndefined();
+  for (const timeAllowancePercent of [-1, 101, '30', NaN])
+    expect(() =>
+      parsePreviewProfile({ ...value, timeAllowancePercent }, value.printerId),
+    ).toThrow('allowance');
 });

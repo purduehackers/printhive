@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "timeAllowancePercent": 30,
   "printerId": "prusa-core-one-plus",
   "id": "prusa-core-one-plus-generic-pla-0.4-orca-2.4.2-v1",
   "label": "Prusa Core ONE+ / Generic PLA / 0.4 mm",
@@ -38,6 +39,7 @@
     "detect_thin_wall": "0",
     "draft_shield": "disabled",
     "elefant_foot_compensation": "0.2",
+    "emit_machine_limits_to_gcode": "1",
     "enable_arc_fitting": "1",
     "enable_overhang_speed": "1",
     "enable_prime_tower": "0",
@@ -148,6 +150,9 @@
       "3"
     ],
     "gap_infill_speed": "120",
+    "gcode_comments": "0",
+    "gcode_flavor": "marlin2",
+    "gcode_label_objects": "1",
     "hot_plate_temp": [
       "60"
     ],

@@ -1,6 +1,7 @@
 import { chromium, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { startHarness } from '../tests/harness';
+import { applyPrintTimeAllowance, formatPrintTime } from '../src/lib/preview';
 
 const h = await startHarness();
 const browser = await chromium.launch({ headless: true });
@@ -16,13 +17,24 @@ try {
       }>;
     };
     state.requestedProfiles = [];
+    (window as unknown as { rawSeconds: number[] }).rawSeconds = [];
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (
       message,
       options?: Transferable[] | StructuredSerializeOptions,
     ) {
-      if (message?.operation === 'fast_shapes')
+      if (message?.operation === 'fast_shapes') {
         state.requestedProfiles.push(message.request.profile);
+        this.addEventListener('message', ({ data }) => {
+          if (
+            data.type === 'result' &&
+            Number.isFinite(data.result?.estimatedSeconds)
+          )
+            (window as unknown as { rawSeconds: number[] }).rawSeconds.push(
+              data.result.estimatedSeconds,
+            );
+        });
+      }
       return Reflect.apply(
         post,
         this,
@@ -82,6 +94,13 @@ try {
     .selectOption('none');
   await add('core-part.stl', Buffer.from(source));
   await ready();
+  const firstRawSeconds = await page.evaluate(
+    () => (window as unknown as { rawSeconds: number[] }).rawSeconds[0],
+  );
+  expect(firstRawSeconds).toBeGreaterThan(0);
+  await expect(page.locator('.print-time strong')).toHaveText(
+    formatPrintTime(applyPrintTimeAllowance(firstRawSeconds, 30), true),
+  );
   await expect(page.getByLabel('Estimate printer')).toHaveText(
     'For Prusa Core ONE+',
   );
@@ -105,7 +124,9 @@ try {
   await add('h2d-part.stl', large);
   await page.getByRole('button', { name: /^h2d-part\.stl/ }).click();
   await ready();
-  await expect(page.getByLabel('Estimate printer')).toHaveText('For Bambu H2D');
+  await expect(page.getByLabel('Estimate printer')).toHaveText(
+    'For Bambu H2D Pro',
+  );
   profiles = await page.evaluate(
     () =>
       (
@@ -168,6 +189,32 @@ try {
       ).requestedProfiles,
   );
   expect(refreshed.length).toBe(afterRefresh); // Returning to unchanged settings uses the earlier result.
+  const rawSeconds = await page.evaluate(() =>
+    (window as unknown as { rawSeconds: number[] }).rawSeconds.at(-1)!,
+  );
+  const nativeRequests = refreshed.length;
+  core.timeAllowancePercent = 50;
+  await page.getByRole('button', { name: /^h2d-part\.stl/ }).click();
+  await ready();
+  await page.getByRole('button', { name: /^core-part\.stl/ }).click();
+  await ready();
+  await expect(page.getByText('Quick estimate · 50% extra time')).toBeVisible();
+  await expect(page.locator('.print-time strong')).toHaveText(
+    formatPrintTime(applyPrintTimeAllowance(firstRawSeconds, 50), true),
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { requestedProfiles: unknown[] })
+          .requestedProfiles.length,
+    ),
+  ).toBe(nativeRequests);
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { rawSeconds: number[] }).rawSeconds.at(-1),
+    ),
+  ).toBe(rawSeconds);
+  core.timeAllowancePercent = 30;
   // A broken fallback never borrows the smaller printer's settings.
   failH2d = true;
   await page.reload();
@@ -177,7 +224,7 @@ try {
   await page.getByRole('button', { name: /^h2d-part\.stl/ }).click();
   await expect(
     page.getByText(
-      "Couldn't load slicer settings for Bambu H2D. Reload to try again.",
+      "Couldn't load slicer settings for Bambu H2D Pro. Reload to try again.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -214,7 +261,7 @@ try {
       'core-one.json',
       'For Prusa Core ONE+',
     ],
-    ['stock-h2d.stl', large, 'h2d.json', 'For Bambu H2D'],
+    ['stock-h2d.stl', large, 'h2d.json', 'For Bambu H2D Pro'],
   ] as const) {
     const shipped = JSON.parse(
       await readFile(

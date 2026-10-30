@@ -21,10 +21,10 @@ const selections = [
     file: 'h2d.json',
     vendor: 'BBL',
     printerId: 'bambu-h2d',
-    machine: 'Bambu Lab H2D 0.4 nozzle',
-    process: '0.20mm Standard @BBL H2D',
-    filament: 'Generic PLA @BBL H2D',
-    label: 'Bambu H2D / Generic PLA / 0.4 mm',
+    machine: 'Bambu Lab H2D Pro 0.4 nozzle',
+    process: '0.20mm Standard @BBL H2DP',
+    filament: 'Generic PLA @BBL H2DP',
+    label: 'Bambu H2D Pro / Generic PLA / 0.4 mm',
     bed: [325, 320, 325],
   },
 ];
@@ -83,7 +83,8 @@ export function adaptConfiguration(resolved, options, h2d) {
     if (
       !definition ||
       key === 'inherits' ||
-      key.includes('gcode') ||
+      (key.endsWith('_gcode') &&
+        ['string', 'strings'].includes(definition.type)) ||
       /^(compatible_|default_(?!acceleration)|print_host|printhost_|host_type|thumbnails|post_process)/.test(
         key,
       ) ||
@@ -242,6 +243,7 @@ async function main() {
     });
     const profile = {
       schemaVersion: 1,
+      timeAllowancePercent: 30,
       printerId: selection.printerId,
       id: `${selection.printerId}-generic-pla-0.4-orca-2.4.2-v1`,
       label: selection.label,

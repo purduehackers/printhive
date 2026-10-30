@@ -5,7 +5,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   createPreviewClient,
   type PreviewClient,
-  type PreviewProfile,
   type FastSupportPreview,
 } from "@time-estimator/browser-preview";
 import { displayTransform } from "@time-estimator/browser-preview/geometry";
@@ -28,6 +27,8 @@ import {
   fitsPreviewPrinter,
   profileForPreviewBed,
   formatPrintTime,
+  applyPrintTimeAllowance,
+  type PrinterPreviewProfile,
 } from "../lib/preview";
 import {
   IDENTITY_ROTATION,
@@ -108,7 +109,7 @@ export default function Preview({
     file: File;
     printerId: string;
     retry: number;
-    profile?: PreviewProfile;
+    profile?: PrinterPreviewProfile;
     error?: string;
   } | null>(null);
   const [preview, setPreview] = useState<FastSupportPreview | null>(null);
@@ -792,10 +793,14 @@ export default function Preview({
     preview.shapes.length === 0 &&
     !calculating &&
     settingsValid;
+  const timeAllowancePercent = profile?.timeAllowancePercent ?? 30;
   const seconds = preview?.estimatedSeconds;
   const time =
     seconds !== undefined
-      ? formatPrintTime(seconds)
+      ? formatPrintTime(
+          applyPrintTimeAllowance(seconds, timeAllowancePercent),
+          true,
+        )
       : orienting
         ? "Waiting for orientation…"
         : !fits || tooSmall || !settingsValid || profileError
@@ -854,7 +859,14 @@ export default function Preview({
               For {printer.name}
             </span>
           )}
-          {preview && <span className="small muted">Quick estimate</span>}
+          {preview && (
+            <span className="small muted">
+              Quick estimate
+              {timeAllowancePercent > 0
+                ? ` · ${timeAllowancePercent}% extra time`
+                : ""}
+            </span>
+          )}
           {copies > 1 && (
             <span className="small muted">per copy · {copies} copies</span>
           )}

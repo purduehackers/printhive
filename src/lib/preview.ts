@@ -4,7 +4,7 @@ import { AVAILABLE_PRINTERS, type PrinterSpec } from './shared';
 const coreOne = AVAILABLE_PRINTERS.find(
   (printer) => printer.id === 'prusa-core-one-plus',
 )!;
-// The H2D's combined 350 mm width needs both nozzles. This preview slices one material/nozzle.
+// The H2D Pro's combined 350 mm width needs both nozzles. This preview slices one material/nozzle.
 const h2d: PrinterSpec = {
   ...AVAILABLE_PRINTERS.find((printer) => printer.id === 'bambu-h2d')!,
   buildVolume: { x: 325, y: 320, z: 325 },
@@ -63,13 +63,36 @@ function requireTimingSettings(config: PreviewProfile['configuration']) {
     );
 }
 
+export interface PrinterPreviewProfile extends PreviewProfile {
+  timeAllowancePercent: number;
+}
+
+/** Display policy only; the reusable slicer's raw result and support geometry stay unchanged. */
+export function applyPrintTimeAllowance(
+  seconds: number,
+  percent: number,
+): number {
+  if (
+    !Number.isFinite(seconds) ||
+    seconds < 0 ||
+    !Number.isFinite(percent) ||
+    percent < 0 ||
+    percent > 100
+  )
+    return NaN;
+  return seconds * (1 + percent / 100);
+}
+
 /** An effective configuration, not an unresolved desktop preset with parents. */
 export function parsePreviewProfile(
   value: unknown,
   printerId: string,
-): PreviewProfile {
+): PrinterPreviewProfile {
   const profile = value as
-    | (Partial<PreviewProfile> & { schemaVersion?: number; printerId?: string })
+    | (Partial<PrinterPreviewProfile> & {
+        schemaVersion?: number;
+        printerId?: string;
+      })
     | null;
   const config = profile?.configuration;
   if (
@@ -100,7 +123,16 @@ export function parsePreviewProfile(
       'Use a resolved, single-nozzle preview profile with the default support style.',
     );
   requireTimingSettings(config);
+  const timeAllowancePercent = profile.timeAllowancePercent ?? 30;
+  if (
+    typeof timeAllowancePercent !== 'number' ||
+    !Number.isFinite(timeAllowancePercent) ||
+    timeAllowancePercent < 0 ||
+    timeAllowancePercent > 100
+  )
+    throw new Error('Print-time allowance must be between 0 and 100 percent.');
   return {
+    timeAllowancePercent,
     id: profile.id,
     label: profile.label,
     ...(typeof profile.basis === 'string' ? { basis: profile.basis } : {}),
@@ -145,7 +177,9 @@ export function profileForPreviewBed(
     );
   const { x, y, z } = printer.buildVolume;
   return {
-    ...profile,
+    // Do not include display-only allowances in engine inputs or the expensive-result cache key.
+    label: profile.label,
+    ...(profile.basis === undefined ? {} : { basis: profile.basis }),
     id: `${profile.id}:bed:${printer.id}`,
     configuration: {
       ...profile.configuration,
@@ -158,10 +192,10 @@ export function profileForPreviewBed(
   };
 }
 
-export function formatPrintTime(seconds: number): string {
+export function formatPrintTime(seconds: number, roundUp = false): string {
   if (!Number.isFinite(seconds) || seconds < 0) return 'Unavailable';
   if (seconds < 60) return 'Under 1 min';
-  const minutes = Math.round(seconds / 60),
+  const minutes = roundUp ? Math.ceil(seconds / 60) : Math.round(seconds / 60),
     hours = Math.floor(minutes / 60),
     remainder = minutes % 60;
   if (!hours) return `About ${minutes} min`;

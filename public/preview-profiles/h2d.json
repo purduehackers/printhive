@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
+  "timeAllowancePercent": 30,
   "printerId": "bambu-h2d",
   "id": "bambu-h2d-generic-pla-0.4-orca-2.4.2-v1",
-  "label": "Bambu H2D / Generic PLA / 0.4 mm",
-  "basis": "OrcaSlicer 2.4.2 (8500fcdccaa10b5099ac20d252af3a7c560046f1): Bambu Lab H2D 0.4 nozzle; 0.20mm Standard @BBL H2D; Generic PLA @BBL H2D. Resolved inheritance, single standard nozzle, default support style; print body only, uncalibrated.",
+  "label": "Bambu H2D Pro / Generic PLA / 0.4 mm",
+  "basis": "OrcaSlicer 2.4.2 (8500fcdccaa10b5099ac20d252af3a7c560046f1): Bambu Lab H2D Pro 0.4 nozzle; 0.20mm Standard @BBL H2DP; Generic PLA @BBL H2DP. Resolved inheritance, single standard nozzle, default support style; print body only, uncalibrated.",
   "configuration": {
     "activate_air_filtration": [
       "0"
@@ -217,6 +218,7 @@
       "0"
     ],
     "gap_infill_speed": "250",
+    "gcode_flavor": "marlin",
     "grab_length": [
       "0"
     ],
@@ -409,7 +411,7 @@
     "printer_extruder_variant": [
       "Direct Drive Standard"
     ],
-    "printer_model": "Bambu Lab H2D",
+    "printer_model": "Bambu Lab H2D Pro",
     "printer_structure": "corexy",
     "printer_technology": "FFF",
     "printer_variant": "0.4",
@@ -545,7 +547,7 @@
     "tree_support_branch_diameter": "2",
     "tree_support_wall_count": "0",
     "upward_compatible_machine": [
-      "Bambu Lab H2D Pro 0.4 nozzle"
+      "Bambu Lab H2D 0.4 nozzle"
     ],
     "use_relative_e_distances": "0",
     "volumetric_speed_coefficients": [

@@ -2,12 +2,12 @@ import { describe, test, expect } from 'bun:test';
 import { AVAILABLE_PRINTERS, checkPrinterFit } from '../src/lib/shared';
 
 describe('Available printers fleet and specifications', () => {
-  test('contains Bambu H2D and Prusa Core ONE+ with correct build volumes', () => {
+  test('contains Bambu H2D Pro and Prusa Core ONE+ with correct build volumes', () => {
     expect(AVAILABLE_PRINTERS).toHaveLength(2);
 
     const bambu = AVAILABLE_PRINTERS.find(p => p.id === 'bambu-h2d');
     expect(bambu).toBeDefined();
-    expect(bambu!.name).toBe('Bambu H2D');
+    expect(bambu!.name).toBe('Bambu H2D Pro');
     expect(bambu!.manufacturer).toBe('Bambu Lab');
     expect(bambu!.buildVolume).toEqual({ x: 350, y: 320, z: 325 });
     expect(bambu!.buildVolumeFormatted).toBe('350 × 320 × 325 mm');

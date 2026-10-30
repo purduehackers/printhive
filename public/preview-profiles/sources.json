@@ -27,16 +27,12 @@
         "compatible_printers_condition",
         "default_filament_profile",
         "default_print_profile",
-        "emit_machine_limits_to_gcode",
         "filament_end_gcode",
         "filament_id",
         "filament_notes",
         "filament_settings_id",
         "filament_start_gcode",
         "from",
-        "gcode_comments",
-        "gcode_flavor",
-        "gcode_label_objects",
         "host_type",
         "inherits",
         "instantiation",
@@ -59,10 +55,10 @@
       "file": "h2d.json",
       "vendor": "BBL",
       "printerId": "bambu-h2d",
-      "machine": "Bambu Lab H2D 0.4 nozzle",
-      "process": "0.20mm Standard @BBL H2D",
-      "filament": "Generic PLA @BBL H2D",
-      "label": "Bambu H2D / Generic PLA / 0.4 mm",
+      "machine": "Bambu Lab H2D Pro 0.4 nozzle",
+      "process": "0.20mm Standard @BBL H2DP",
+      "filament": "Generic PLA @BBL H2DP",
+      "label": "Bambu H2D Pro / Generic PLA / 0.4 mm",
       "bed": [
         325,
         320,
@@ -108,7 +104,6 @@
         "filament_start_gcode",
         "filament_velocity_adaptation_factor",
         "from",
-        "gcode_flavor",
         "hole_coef_1",
         "hole_coef_2",
         "hole_coef_3",
@@ -176,14 +171,14 @@
       "sha256": "85ebc04bd25c236322547d6d95f5a074ce4cab53cf975392e1f6b2c1fb74d406"
     },
     {
-      "path": "resources/profiles/BBL/filament/Generic PLA @BBL H2D.json",
-      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/Generic%20PLA%20%40BBL%20H2D.json",
-      "sha256": "1987bd23d9efca5557d97eba6a05e95d616ae211a7820f7ab93f8a603910077b"
+      "path": "resources/profiles/BBL/filament/Generic PLA @BBL H2DP.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/filament/Generic%20PLA%20%40BBL%20H2DP.json",
+      "sha256": "b670b031c504a9deb21917b9aae4c0037ec3b2a7d917fdf8fc71df2db48ebe45"
     },
     {
-      "path": "resources/profiles/BBL/machine/Bambu Lab H2D 0.4 nozzle.json",
-      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/machine/Bambu%20Lab%20H2D%200.4%20nozzle.json",
-      "sha256": "f901504c1a8e9ae0e87a7520ee018268c31a369888cd381f7bd044603ef9a010"
+      "path": "resources/profiles/BBL/machine/Bambu Lab H2D Pro 0.4 nozzle.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/machine/Bambu%20Lab%20H2D%20Pro%200.4%20nozzle.json",
+      "sha256": "3cf3c1c83077734337cdae74afdc2aea5a9a446d245a9de8e6e2f7258d637783"
     },
     {
       "path": "resources/profiles/BBL/machine/fdm_bbl_3dp_002_common.json",
@@ -196,9 +191,9 @@
       "sha256": "cdcaa5e5061934a9b960c94e203cc7d1e3b869a407182644f2dda9fdcbf5c2b3"
     },
     {
-      "path": "resources/profiles/BBL/process/0.20mm Standard @BBL H2D.json",
-      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/0.20mm%20Standard%20%40BBL%20H2D.json",
-      "sha256": "4afdb9b77b89ce734441081f8b0c9f6cc8c317b8bf5689ec3cdda52b3c7f0bba"
+      "path": "resources/profiles/BBL/process/0.20mm Standard @BBL H2DP.json",
+      "url": "https://raw.githubusercontent.com/OrcaSlicer/OrcaSlicer/8500fcdccaa10b5099ac20d252af3a7c560046f1/resources/profiles/BBL/process/0.20mm%20Standard%20%40BBL%20H2DP.json",
+      "sha256": "1d23e9a9ec02f78034dc64624ca5807373b9b4d6ed0c77fb7111edb82f91b541"
     },
     {
       "path": "resources/profiles/BBL/process/fdm_process_common.json",

@@ -105,7 +105,7 @@ export interface PrinterSpec {
 export const AVAILABLE_PRINTERS: PrinterSpec[] = [
   {
     id: 'bambu-h2d',
-    name: 'Bambu H2D',
+    name: 'Bambu H2D Pro',
     manufacturer: 'Bambu Lab',
     buildVolume: { x: 350, y: 320, z: 325 },
     buildVolumeFormatted: '350 × 320 × 325 mm',

@@ -8,7 +8,7 @@ estimate choice does not assign the submitted job to a printer.
 | Printer | Editable file | Process basis | Preview space (mm) |
 | --- | --- | --- | --- |
 | Prusa Core ONE+ | [core-one.json](../public/preview-profiles/core-one.json) | 0.20mm SPEED @CORE One 0.4 | 250 × 220 × 270 |
-| Bambu H2D, right standard nozzle | [h2d.json](../public/preview-profiles/h2d.json) | 0.20mm Standard @BBL H2D | 325 × 320 × 325 |
+| Bambu H2D Pro, right standard nozzle | [h2d.json](../public/preview-profiles/h2d.json) | 0.20mm Standard @BBL H2DP | 325 × 320 × 325 |
 
 The presets include inherited speeds, accelerations, line widths, shell settings,
 material flow limits and cooling settings. Generic PLA limits volumetric flow to
@@ -16,6 +16,28 @@ material flow limits and cooling settings. Generic PLA limits volumetric flow to
 preset as the baseline for this fleet's ONE+; it is not a separate ONE+ calibration.
 The H2D profile selects the right standard nozzle, not the high-flow variant or the
 350 mm combined dual-nozzle space. A model that fits neither printer has no estimate.
+
+## Conservative displayed time
+
+Displayed times include **30% extra time** and round upward to the next minute.
+This is a user-requested planning allowance, not a calibration or a guaranteed upper
+bound. For example, a raw 44-minute estimate displays About 58 min after adding 30%
+and rounding up. The preview row states the percentage so it is not hidden.
+
+Edit the top-level `timeAllowancePercent` in either printer JSON to choose another
+percentage from 0 through 100; 0 disables the percentage allowance. Older files
+without the field use 30%. Selecting a file or retrying reloads the value. This field
+stays outside Orca's `configuration` and the raw-slice cache key, so changing only
+an allowance updates the display without generating supports or estimating again.
+The standalone browser library still returns its raw model-and-support time.
+
+The fleet's Bambu printer is **H2D Pro**. Its profile now resolves `Bambu Lab H2D Pro
+0.4 nozzle`, `0.20mm Standard @BBL H2DP` and `Generic PLA @BBL H2DP` at the pinned
+Orca revision. The existing `bambu-h2d` identifier and `h2d.json` URL remain stable
+for compatibility; they select the Pro preset. Core ONE remains the first choice
+when the part fits. Historical comparison reports retain the printer they tested. The importer removes
+custom `_gcode` scripts while retaining behavior options such as `gcode_flavor`
+and `emit_machine_limits_to_gcode`; these must not silently revert to engine defaults.
 
 ## Editing and refreshing profiles
 
@@ -150,7 +172,7 @@ infill. Earlier starter configurations were +6.97% to +252.14% above the intende
 printer-profile Orca references (median +109.13%). Those starters inherited a
 2 mm³/s generic flow cap and generic motion settings. Current resolved printer
 profiles ranged from −30.89% to +1.02%, with 20.27% median absolute difference.
-The old/current comparison deliberately changes configuration; only the current
+This earlier study used H2D before the Pro correction. The old/current comparison deliberately changes configuration; only the current
 same-profile comparison measures the fast surrogate’s disagreement with Orca.
 
 The browser’s full reference includes G-code generation and native timing, not

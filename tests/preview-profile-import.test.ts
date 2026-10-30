@@ -37,6 +37,8 @@ test('H2D selects the right standard nozzle, preserving normal/quiet limit pairs
     printable_area: { type: 'points', scope: 'machine' },
     wall_sequence: { type: 'enum', scope: 'print' },
     machine_start_gcode: { type: 'string', scope: 'machine' },
+    gcode_flavor: { type: 'enum', scope: 'machine' },
+    emit_machine_limits_to_gcode: { type: 'bool', scope: 'machine' },
   };
   const { configuration, omitted } = adaptConfiguration(
     {
@@ -56,6 +58,8 @@ test('H2D selects the right standard nozzle, preserving normal/quiet limit pairs
       printable_area: ['0x0', '350x0', '350x320', '0x320'],
       wall_infill_order: 'outer wall/inner wall/infill',
       machine_start_gcode: 'Do not execute desktop snippets',
+      gcode_flavor: 'bbl',
+      emit_machine_limits_to_gcode: '1',
       obsolete_option: 'not supported',
     },
     options,
@@ -67,6 +71,8 @@ test('H2D selects the right standard nozzle, preserving normal/quiet limit pairs
   expect(configuration.filament_max_volumetric_speed).toEqual(['12']);
   expect(configuration.printable_area).toHaveLength(4);
   expect(configuration.wall_sequence).toBe('outer wall/inner wall');
+  expect(configuration.gcode_flavor).toBe('bbl');
+  expect(configuration.emit_machine_limits_to_gcode).toBe('1');
   expect(omitted).toEqual(['machine_start_gcode', 'obsolete_option']);
 });
 
@@ -88,6 +94,9 @@ test('shipped profiles retain real printer/process/PLA settings and pinned sourc
   expect(core.configuration.travel_speed).toBe('350');
   expect(core.configuration.filament_max_volumetric_speed).toEqual(['15']);
   expect(core.configuration.support_threshold_angle).toBe('35');
+  expect(h2d.configuration.printer_model).toBe('Bambu Lab H2D Pro');
+  expect(h2d.configuration.gcode_flavor).toBe('marlin');
+  expect(core.configuration.gcode_flavor).toBe('marlin2');
   expect(h2d.configuration.outer_wall_speed).toBe('200');
   expect(h2d.configuration.default_acceleration).toBe('8000');
   expect(h2d.configuration.filament_max_volumetric_speed).toEqual(['12']);
