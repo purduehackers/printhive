@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, type SubmitEvent } from 'react';
-import { reference, resolveColor, type Job, type Status } from '../lib/shared';
+import {
+  effectiveGroupName,
+  reference,
+  resolveColor,
+  sortJobs,
+  summarizeGroupStatus,
+  type Job,
+  type SortOption,
+  type Status,
+} from '../lib/shared';
 
 interface OperatorQueueProps {
   initialJobs: Job[];
@@ -7,12 +16,15 @@ interface OperatorQueueProps {
   page?: number;
 }
 
+type GroupByOption = 'none' | 'custom' | 'batch' | 'material-color' | 'status' | 'submitter';
+
 const STORAGE_KEY = 'printhive_operator_custom_groups';
 
 export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [groupBy, setGroupBy] = useState<'none' | 'material-color' | 'custom' | 'status'>('none');
+  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
+  const [sortBy, setSortBy] = useState<SortOption>('queue');
   const [customGroups, setCustomGroups] = useState<Record<string, string[]>>({});
   const [isGroupingModalOpen, setGroupingModalOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
@@ -48,13 +60,16 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
     }
   };
 
-  // Find custom group name for a given job ID
-  const getJobGroupName = (jobId: string): string | null => {
+  // Find effective group name for a given job (operator custom group or batch submission group)
+  const getJobGroupName = (job: Job): string | null => {
     for (const [name, ids] of Object.entries(customGroups)) {
-      if (ids.includes(jobId)) return name;
+      if (ids.includes(job.id)) return name;
     }
-    return null;
+    return effectiveGroupName(job);
   };
+
+  const getGroupJobIds = (groupName: string): string[] =>
+    jobs.filter(j => getJobGroupName(j) === groupName).map(j => j.id);
 
   // Selection helpers
   const toggleSelect = (id: string) => {
@@ -86,7 +101,7 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
   };
 
   const selectGroup = (groupJobIds: string[]) => {
-    const allSelected = groupJobIds.every(id => selectedIds.has(id));
+    const allSelected = groupJobIds.length > 0 && groupJobIds.every(id => selectedIds.has(id));
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (allSelected) {
@@ -131,41 +146,67 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
     }
   }, [selectedIds, jobs]);
 
-  // Create custom group from selection
-  const handleCreateGroup = (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const name = newGroupName.trim();
-    if (!name) return;
+  const applyGroupAssignment = (name: string, idsToAdd: string[]) => {
+    const trimmed = name.trim();
+    if (!trimmed || !idsToAdd.length) return;
 
-    const idsToAdd = Array.from(selectedIds);
-    if (!idsToAdd.length) return;
+    const idSet = new Set(idsToAdd);
+    setJobs(prev => prev.map(j => idSet.has(j.id) ? { ...j, group_name: trimmed } : j));
 
     const updated = { ...customGroups };
-    // Remove selected IDs from any existing group
     for (const key of Object.keys(updated)) {
-      updated[key] = updated[key].filter(id => !idsToAdd.includes(id));
+      updated[key] = updated[key].filter(id => !idSet.has(id));
       if (updated[key].length === 0) delete updated[key];
     }
-
-    updated[name] = Array.from(new Set([...(updated[name] || []), ...idsToAdd]));
+    updated[trimmed] = Array.from(new Set([...(updated[trimmed] || []), ...idsToAdd]));
     saveCustomGroups(updated);
     setNewGroupName('');
     setGroupingModalOpen(false);
     setGroupBy('custom');
     setNotice({
       type: 'success',
-      message: `Group "${name}" created with ${idsToAdd.length} print${idsToAdd.length === 1 ? '' : 's'}.`,
+      message: `Group "${trimmed}" created with ${idsToAdd.length} print${idsToAdd.length === 1 ? '' : 's'}.`,
     });
+
+    fetch('/api/jobs/group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: idsToAdd, group_name: trimmed }),
+    }).catch(() => {});
+  };
+
+  // Create custom group from selection
+  const handleCreateGroup = (e: SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const name = newGroupName.trim();
+    if (!name) return;
+    const idsToAdd = Array.from(selectedIds);
+    if (!idsToAdd.length) return;
+    applyGroupAssignment(name, idsToAdd);
   };
 
   const ungroup = (groupName: string) => {
+    const targetIds = getGroupJobIds(groupName);
+    const idSet = new Set(targetIds);
+    setJobs(prev => prev.map(j => idSet.has(j.id) ? { ...j, group_name: null } : j));
+
     const updated = { ...customGroups };
     delete updated[groupName];
+    for (const key of Object.keys(updated)) {
+      updated[key] = updated[key].filter(id => !idSet.has(id));
+      if (updated[key].length === 0) delete updated[key];
+    }
     saveCustomGroups(updated);
     setNotice({
       type: 'success',
       message: `Group "${groupName}" disbanded.`,
     });
+
+    fetch('/api/jobs/group', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: targetIds, group_name: groupName, ungroup: true }),
+    }).catch(() => {});
   };
 
   // Batch status update submission
@@ -244,6 +285,17 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
     }
   };
 
+  const sortedJobs = sortJobs(jobs, sortBy, getJobGroupName);
+
+  // Collect all active group names for quick assignment
+  const existingGroupNames = Array.from(
+    new Set(
+      jobs
+        .map(j => getJobGroupName(j))
+        .filter((name): name is string => Boolean(name)),
+    ),
+  );
+
   // Group definitions
   type GroupBucket = {
     key: string;
@@ -252,12 +304,13 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
     jobs: Job[];
     isCustom?: boolean;
     customGroupName?: string;
+    isBatch?: boolean;
   };
 
   const getGroupedData = (): GroupBucket[] => {
     if (groupBy === 'material-color') {
       const map = new Map<string, Job[]>();
-      for (const job of jobs) {
+      for (const job of sortedJobs) {
         const key = `${job.material ?? 'PLA'} · ${job.color}`;
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(job);
@@ -272,25 +325,31 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
 
     if (groupBy === 'custom') {
       const buckets: GroupBucket[] = [];
-      const assignedIds = new Set<string>();
+      const map = new Map<string, Job[]>();
+      const ungroupedJobs: Job[] = [];
 
-      // Custom groups
-      for (const [groupName, ids] of Object.entries(customGroups)) {
-        const groupJobs = jobs.filter(j => ids.includes(j.id));
-        if (groupJobs.length > 0) {
-          groupJobs.forEach(j => assignedIds.add(j.id));
-          buckets.push({
-            key: `custom_${groupName}`,
-            title: groupName,
-            jobs: groupJobs,
-            isCustom: true,
-            customGroupName: groupName,
-          });
+      for (const job of sortedJobs) {
+        const groupName = getJobGroupName(job);
+        if (groupName) {
+          if (!map.has(groupName)) map.set(groupName, []);
+          map.get(groupName)!.push(job);
+        } else {
+          ungroupedJobs.push(job);
         }
       }
 
-      // Ungrouped
-      const ungroupedJobs = jobs.filter(j => !assignedIds.has(j.id));
+      for (const [groupName, groupJobs] of map.entries()) {
+        const isBatch = groupJobs.every(j => Boolean(j.batch_id) && j.batch_id === groupJobs[0].batch_id);
+        buckets.push({
+          key: `custom_${groupName}`,
+          title: groupName,
+          jobs: groupJobs,
+          isCustom: true,
+          customGroupName: groupName,
+          isBatch,
+        });
+      }
+
       if (ungroupedJobs.length > 0) {
         buckets.push({
           key: 'custom_ungrouped',
@@ -302,9 +361,46 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
       return buckets;
     }
 
+    if (groupBy === 'batch') {
+      const buckets: GroupBucket[] = [];
+      const map = new Map<string, Job[]>();
+      const singleJobs: Job[] = [];
+
+      for (const job of sortedJobs) {
+        if (job.batch_id) {
+          if (!map.has(job.batch_id)) map.set(job.batch_id, []);
+          map.get(job.batch_id)!.push(job);
+        } else {
+          singleJobs.push(job);
+        }
+      }
+
+      for (const [batchId, batchJobs] of map.entries()) {
+        const label = batchJobs[0]?.batch_title || getJobGroupName(batchJobs[0]) || `Batch #${reference(batchId)}`;
+        buckets.push({
+          key: `batch_${batchId}`,
+          title: label,
+          jobs: batchJobs,
+          isBatch: true,
+          isCustom: Boolean(getJobGroupName(batchJobs[0])),
+          customGroupName: getJobGroupName(batchJobs[0]) ?? undefined,
+        });
+      }
+
+      if (singleJobs.length > 0) {
+        buckets.push({
+          key: 'batch_single',
+          title: 'Individual Submissions',
+          jobs: singleJobs,
+        });
+      }
+
+      return buckets;
+    }
+
     if (groupBy === 'status') {
       const map = new Map<string, Job[]>();
-      for (const job of jobs) {
+      for (const job of sortedJobs) {
         const key = job.status;
         if (!map.has(key)) map.set(key, []);
         map.get(key)!.push(job);
@@ -316,16 +412,32 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
       }));
     }
 
+    if (groupBy === 'submitter') {
+      const map = new Map<string, Job[]>();
+      for (const job of sortedJobs) {
+        const key = job.email;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(job);
+      }
+      return Array.from(map.entries()).map(([key, groupJobs]) => ({
+        key: `submitter_${key}`,
+        title: key,
+        jobs: groupJobs,
+      }));
+    }
+
     // Default flat list
     return [{
       key: 'all',
       title: 'All Prints',
-      jobs,
+      jobs: sortedJobs,
     }];
   };
 
   const groups = getGroupedData();
   const allSelected = jobs.length > 0 && selectedIds.size === jobs.length;
+  const selectedJobsList = jobs.filter(j => selectedIds.has(j.id));
+  const recipientCount = new Set(selectedJobsList.map(j => j.email.toLowerCase())).size;
 
   return (
     <div>
@@ -344,7 +456,9 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
               <h3>
                 <strong>{selectedIds.size}</strong> print{selectedIds.size === 1 ? '' : 's'} selected
               </h3>
-              <p className="small muted">Update status for all selected prints together.</p>
+              <p className="small muted">
+                Update status for all selected prints together ({recipientCount} notification email{recipientCount === 1 ? '' : 's'} will be sent).
+              </p>
             </div>
             <div className="selection-actions">
               <button
@@ -377,7 +491,7 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
           {/* Group Creation Inline Form */}
           {isGroupingModalOpen && (
             <div className="group-create-card">
-              <h4>Create custom group</h4>
+              <h4>Create or assign custom group</h4>
               <p className="small muted">Group these {selectedIds.size} print(s) under a shared name (e.g. Bed 1, Batch A).</p>
               <form onSubmit={handleCreateGroup} className="group-create-form">
                 <input
@@ -385,13 +499,28 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                   placeholder="Group name (e.g. Bed 1)"
                   value={newGroupName}
                   onChange={e => setNewGroupName(e.target.value)}
-                  maxLength={50}
+                  maxLength={200}
                   required
                   autoFocus
                 />
                 <button type="submit" className="button primary">Save group</button>
                 <button type="button" className="button secondary" onClick={() => setGroupingModalOpen(false)}>Cancel</button>
               </form>
+              {existingGroupNames.length > 0 && (
+                <div className="existing-groups-row">
+                  <span className="small muted">Add to existing group:</span>
+                  {existingGroupNames.map(name => (
+                    <button
+                      key={name}
+                      type="button"
+                      className="group-badge group-badge-button"
+                      onClick={() => applyGroupAssignment(name, Array.from(selectedIds))}
+                    >
+                      + {name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -444,18 +573,38 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
 
       {/* Toolbar above table */}
       <div className="operator-queue-bar">
-        <div className="group-view-select">
-          <label htmlFor="group-by-select">Group by:</label>
-          <select
-            id="group-by-select"
-            value={groupBy}
-            onChange={e => setGroupBy(e.target.value as any)}
-          >
-            <option value="none">None (flat list)</option>
-            <option value="material-color">Material &amp; Colour</option>
-            <option value="custom">Custom Groups</option>
-            <option value="status">Status</option>
-          </select>
+        <div className="queue-view-controls">
+          <div className="group-view-select">
+            <label htmlFor="group-by-select">Group by:</label>
+            <select
+              id="group-by-select"
+              value={groupBy}
+              onChange={e => setGroupBy(e.target.value as GroupByOption)}
+            >
+              <option value="none">None (flat list)</option>
+              <option value="custom">Custom &amp; Batch Groups</option>
+              <option value="batch">Batch Submissions</option>
+              <option value="material-color">Material &amp; Colour</option>
+              <option value="status">Status</option>
+              <option value="submitter">Submitter</option>
+            </select>
+          </div>
+          <div className="group-view-select">
+            <label htmlFor="sort-by-select">Sort by:</label>
+            <select
+              id="sort-by-select"
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as SortOption)}
+            >
+              <option value="queue">Queue order</option>
+              <option value="group">Group / Batch</option>
+              <option value="status">Status</option>
+              <option value="material-color">Material &amp; Colour</option>
+              <option value="submitter">Submitter</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="newest">Newest first</option>
+            </select>
+          </div>
         </div>
         <div className="selection-actions">
           {selectedIds.size > 0 ? (
@@ -494,6 +643,7 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
             const showGroupHeader = groupBy !== 'none';
             const groupJobIds = group.jobs.map(j => j.id);
             const allGroupSelected = groupJobIds.length > 0 && groupJobIds.every(id => selectedIds.has(id));
+            const statusSummary = summarizeGroupStatus(group.jobs);
 
             return (
               <tbody key={group.key}>
@@ -509,8 +659,12 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                             />
                           )}
                           <span>{group.title}</span>
+                          {group.isBatch && <span className="batch-origin-tag">Batch</span>}
                           <span className="muted small">
                             ({group.jobs.length} {group.jobs.length === 1 ? 'print' : 'prints'})
+                          </span>
+                          <span className={`status ${statusSummary.status}`} title="Group status summary">
+                            {statusSummary.label}
                           </span>
                         </div>
                         <div className="group-actions">
@@ -551,7 +705,8 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                 )}
                 {group.jobs.map(job => {
                   const isSelected = selectedIds.has(job.id);
-                  const jobGroupName = getJobGroupName(job.id);
+                  const jobGroupName = getJobGroupName(job);
+                  const groupMemberIds = jobGroupName ? getGroupJobIds(jobGroupName) : [];
 
                   return (
                     <tr key={job.id} className={isSelected ? 'selected-row' : ''}>
@@ -566,7 +721,18 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                       <td>
                         <a className="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
                         <span className="mono small muted">#{reference(job.id)}</span>
-                        {jobGroupName && <span className="group-badge">{jobGroupName}</span>}
+                        {jobGroupName && (
+                          <button
+                            type="button"
+                            className="group-badge group-badge-button"
+                            onClick={() => selectGroup(groupMemberIds)}
+                            aria-label={`Select group ${jobGroupName}`}
+                            title={`Click to select all ${groupMemberIds.length} print(s) in "${jobGroupName}"`}
+                          >
+                            {jobGroupName}
+                            {groupMemberIds.length > 1 ? ` (${groupMemberIds.length})` : ''}
+                          </button>
+                        )}
                       </td>
                       <td>{job.email}</td>
                       <td>

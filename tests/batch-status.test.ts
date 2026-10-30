@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrate, closeDb, db } from '../src/lib/server/db';
-import { reserve, upload, confirmation, publicQueue, batchUpdateStatus } from '../src/lib/server/jobs';
+import { reserve, reserveBatch, upload, finalizeBatch, confirmation, publicQueue, batchUpdateStatus, updateJobGroup } from '../src/lib/server/jobs';
 import { submission, asciiSTL } from './fixtures';
-import { MAX_FEEDBACK_LENGTH } from '../src/lib/shared';
+import { MAX_FEEDBACK_LENGTH, sortJobs, summarizeGroupStatus } from '../src/lib/shared';
 
 let dir: string;
 const accepted: string[] = [];
@@ -50,7 +50,7 @@ afterAll(async () => {
 });
 
 describe('batch status updates for grouped queue items', () => {
-  test('multiple queued prints can be transitioned to printing simultaneously', async () => {
+  test('multiple queued prints for the same user can be transitioned to printing simultaneously with one consolidated email', async () => {
     const job1 = await queued({ title: 'Bracket 1' });
     const job2 = await queued({ title: 'Bracket 2' });
     const job3 = await queued({ title: 'Bracket 3' });
@@ -67,8 +67,11 @@ describe('batch status updates for grouped queue items', () => {
     expect(result.errors).toHaveLength(0);
     expect(result.warnings).toHaveLength(0);
     expect(result.updated.every(j => j.status === 'printing')).toBe(true);
-    expect(accepted).toHaveLength(3);
-    expect(accepted.every(msg => msg.includes('printing'))).toBe(true);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]).toContain('printing');
+    expect(accepted[0]).toContain('Bracket 1');
+    expect(accepted[0]).toContain('Bracket 2');
+    expect(accepted[0]).toContain('Bracket 3');
 
     const queue = await publicQueue();
     expect(queue.filter(j => j.status === 'printing')).toHaveLength(3);
@@ -79,7 +82,7 @@ describe('batch status updates for grouped queue items', () => {
     expect(events.every((e: { previous_status: string; next_status: string }) => e.previous_status === 'queued' && e.next_status === 'printing')).toBe(true);
   });
 
-  test('multiple printing prints can be transitioned to completed simultaneously', async () => {
+  test('multiple printing prints can be transitioned to completed simultaneously with one consolidated email per user', async () => {
     const job1 = await queued({ title: 'Part A' });
     const job2 = await queued({ title: 'Part B' });
 
@@ -98,14 +101,16 @@ describe('batch status updates for grouped queue items', () => {
     expect(result.updated).toHaveLength(2);
     expect(result.errors).toHaveLength(0);
     expect(result.updated.every(j => j.status === 'completed')).toBe(true);
-    expect(accepted).toHaveLength(2);
-    expect(accepted.every(msg => msg.includes('completed'))).toBe(true);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]).toContain('completed');
+    expect(accepted[0]).toContain('Part A');
+    expect(accepted[0]).toContain('Part B');
 
     const queue = await publicQueue();
     expect(queue).toHaveLength(0); // Completed jobs leave the active queue
   });
 
-  test('multiple prints can be rejected and returned together with feedback', async () => {
+  test('multiple prints can be rejected and returned together with feedback in one consolidated email', async () => {
     const job1 = await queued({ title: 'Overhang test 1' });
     const job2 = await queued({ title: 'Overhang test 2' });
     accepted.length = 0;
@@ -121,13 +126,95 @@ describe('batch status updates for grouped queue items', () => {
     expect(result.updated).toHaveLength(2);
     expect(result.errors).toHaveLength(0);
     expect(result.updated.every(j => j.status === 'rejected')).toBe(true);
-    expect(accepted).toHaveLength(2);
-    expect(accepted.every(msg => msg.includes(feedback))).toBe(true);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]).toContain(feedback);
+    expect(accepted[0]).toContain('Overhang test 1');
+    expect(accepted[0]).toContain('Overhang test 2');
 
     const sql = await db();
     const events = await sql`SELECT * FROM job_events WHERE next_status = 'rejected'`;
     expect(events).toHaveLength(2);
     expect(events.every((e: { feedback: string }) => e.feedback === feedback)).toBe(true);
+  });
+
+  test('batch status updates across multiple users send one consolidated email per distinct submitter', async () => {
+    const alice1 = await queued({ title: 'Alice Gear 1', email: 'alice@purdue.edu' });
+    const alice2 = await queued({ title: 'Alice Gear 2', email: 'alice@purdue.edu' });
+    const bob1 = await queued({ title: 'Bob Frame', email: 'bob@purdue.edu' });
+    accepted.length = 0;
+
+    const result = await batchUpdateStatus(
+      [alice1.id, alice2.id, bob1.id],
+      'printing',
+      1,
+      { mailer }
+    );
+
+    expect(result.updated).toHaveLength(3);
+    expect(accepted).toHaveLength(2);
+    expect(accepted[0]).toContain('Alice Gear 1');
+    expect(accepted[0]).toContain('Alice Gear 2');
+    expect(accepted[0]).not.toContain('Bob Frame');
+    expect(accepted[1]).toContain('Bob Frame');
+  });
+
+  test('batch submissions automatically share a group, support custom regrouping/ungrouping, and summarize status and sorting', async () => {
+    const batch = await reserveBatch({
+      title: 'Drone Chassis',
+      email: 'drone@purdue.edu',
+      color: 'yellow',
+      items: [
+        { original_filename: 'arm_front.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'arm_rear.stl', file_size: Buffer.byteLength(asciiSTL) },
+      ],
+    });
+    for (const item of batch.items) {
+      await upload(item.id, item.capability, body(), mailer, { deferEmail: true });
+    }
+    await finalizeBatch(batch.batchToken, mailer);
+    await confirmation(confirmationToken(), true);
+    accepted.length = 0;
+
+    const single = await queued({ title: 'A Solo Mount', email: 'solo@purdue.edu', color: 'white' });
+    accepted.length = 0;
+
+    const queue = await publicQueue();
+    expect(queue).toHaveLength(3);
+    expect(summarizeGroupStatus(queue).label).toBe('queued');
+
+    // Update one print in the batch to printing -> mixed group status
+    await batchUpdateStatus([batch.items[0].id], 'printing', 1, { mailer });
+    const afterOne = await publicQueue();
+    const droneBatch = afterOne.filter(j => j.batch_id === batch.batchId);
+    const summary = summarizeGroupStatus(droneBatch);
+    expect(summary.mixed).toBe(true);
+    expect(summary.label).toBe('1 printing · 1 queued');
+
+    // Sorting helpers
+    expect(sortJobs(afterOne, 'title').map(j => j.title)).toEqual([
+      'A Solo Mount',
+      'Drone Chassis · arm_front',
+      'Drone Chassis · arm_rear',
+    ]);
+    expect(sortJobs(afterOne, 'group').map(j => j.id)).toEqual([
+      batch.items[0].id,
+      batch.items[1].id,
+      single.id,
+    ]);
+
+    // Operator custom group reassignment & ungrouping persisted in DB
+    const grouped = await updateJobGroup([batch.items[0].id, single.id], 'Bed 1', 1);
+    expect(grouped.group_name).toBe('Bed 1');
+    expect(grouped.updated).toHaveLength(2);
+    expect(grouped.updated.every(j => j.group_name === 'Bed 1')).toBe(true);
+    // Original batch_id and batch_title remain preserved
+    expect(grouped.updated.find(j => j.id === batch.items[0].id)?.batch_id).toBe(batch.batchId);
+    expect(grouped.updated.find(j => j.id === batch.items[0].id)?.batch_title).toBe('Drone Chassis');
+
+    const ungrouped = await updateJobGroup([], 'Bed 1', 1, { ungroup: true });
+    expect(ungrouped.group_name).toBeNull();
+    expect(ungrouped.updated).toHaveLength(2);
+    expect(ungrouped.updated.every(j => j.group_name === null)).toBe(true);
   });
 
   test('batch rejection requires feedback and disallows feedback for non-rejections', async () => {

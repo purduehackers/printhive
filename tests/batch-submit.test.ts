@@ -133,6 +133,10 @@ describe('batch submission flow', () => {
     ]);
     expect(queue.every(j => j.color === 'red' && j.infill === 30)).toBe(true);
     expect(queue.map(j => j.copies)).toEqual([2, 1, 3]);
+    expect(typeof batch.batchId).toBe('string');
+    expect(batch.batchTitle).toBe('Gearbox Assembly');
+    expect(batch.groupName).toBe('Gearbox Assembly');
+    expect(queue.every(j => j.batch_id === batch.batchId && j.batch_title === 'Gearbox Assembly' && j.group_name === 'Gearbox Assembly')).toBe(true);
 
     // Confirming again is idempotent
     const repeat = await confirmation(token, true);
@@ -162,5 +166,31 @@ describe('batch submission flow', () => {
     for (const item of batch.items) {
       expect(await Bun.file(filePath(item.id + '.stl')).exists()).toBe(false);
     }
+  });
+
+  test('finalizeBatch with matching verifiedEmail skips confirmation email and queues all prints immediately', async () => {
+    const batch = await reserveBatch({
+      title: 'Verified Batch',
+      email: 'verified@purdue.edu',
+      items: [
+        { original_filename: 'left.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'right.stl', file_size: Buffer.byteLength(asciiSTL) },
+      ],
+    }, { verifiedEmail: 'verified@purdue.edu' });
+    expect(batch.verified).toBe(true);
+
+    for (const item of batch.items) {
+      await upload(item.id, item.capability, body(), rejectedMailer, { deferEmail: true, verifiedEmail: 'verified@purdue.edu' });
+    }
+
+    const res = await finalizeBatch(batch.batchToken, rejectedMailer, { verifiedEmail: 'verified@purdue.edu' });
+    expect(res.confirmed).toBe(true);
+    expect(accepted).toHaveLength(0);
+
+    const queue = await publicQueue();
+    expect(queue.map(j => j.title)).toEqual([
+      'Verified Batch · left',
+      'Verified Batch · right',
+    ]);
   });
 });

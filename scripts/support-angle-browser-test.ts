@@ -205,13 +205,19 @@ try {
   await page.getByLabel('Purdue email').fill('angle@purdue.edu');
   await page.getByRole('button', { name: /^lean-b\.stl/ }).click();
   await page
-    .getByRole('button', { name: 'Send confirmation email', exact: true })
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
     .click();
   await expect(page.getByRole('alert')).toContainText(
     'whole-number support angle',
   );
   await expect(angle).toBeVisible();
   await angle.fill('80');
+  await page
+    .getByRole('button', { name: 'Review 2 prints', exact: true })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Review your 2 prints', exact: true }),
+  ).toBeVisible();
   await page
     .getByRole('button', { name: 'Send confirmation email', exact: true })
     .click();

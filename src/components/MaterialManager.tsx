@@ -56,13 +56,29 @@ export default function MaterialManager({ initial }: { initial: Material[] }) {
     setBusy(true);
     setMessage('');
     try {
-      await request(`/api/materials/${mat.id}`, 'DELETE');
-      setMaterials(curr => curr.filter(m => m.id !== mat.id));
+      const result = await request(`/api/materials/${mat.id}`, 'DELETE');
+      setMaterials(curr => result.materials ?? curr.filter(m => m.id !== mat.id));
       setError(false);
       setMessage(`Material “${mat.name}” removed.`);
     } catch (e) {
       setError(true);
       setMessage(e instanceof Error ? e.message : 'Could not remove material.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetDefaultMaterial(mat: Material) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await request(`/api/materials/${mat.id}/default`, 'POST');
+      setMaterials(result.materials);
+      setError(false);
+      setMessage(`“${mat.name}” set as the default material.`);
+    } catch (e) {
+      setError(true);
+      setMessage(e instanceof Error ? e.message : 'Could not set default material.');
     } finally {
       setBusy(false);
     }
@@ -108,8 +124,9 @@ export default function MaterialManager({ initial }: { initial: Material[] }) {
     setBusy(true);
     setMessage('');
     try {
-      await request(`/api/materials/${materialId}/colors/${color.id}`, 'DELETE');
+      const result = await request(`/api/materials/${materialId}/colors/${color.id}`, 'DELETE');
       setMaterials(curr =>
+        result.materials ??
         curr.map(m =>
           m.id === materialId ? { ...m, colors: m.colors.filter(c => c.id !== color.id) } : m,
         ),
@@ -119,6 +136,22 @@ export default function MaterialManager({ initial }: { initial: Material[] }) {
     } catch (e) {
       setError(true);
       setMessage(e instanceof Error ? e.message : 'Could not remove colour.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetDefaultColor(mat: Material, color: MaterialColor) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await request(`/api/materials/${mat.id}/colors/${color.id}/default`, 'POST');
+      setMaterials(result.materials);
+      setError(false);
+      setMessage(`“${color.name}” set as the default colour for ${mat.name}.`);
+    } catch (e) {
+      setError(true);
+      setMessage(e instanceof Error ? e.message : 'Could not set default colour.');
     } finally {
       setBusy(false);
     }
@@ -138,30 +171,70 @@ export default function MaterialManager({ initial }: { initial: Material[] }) {
             return (
               <article key={mat.id} className="material-card">
                 <div className="material-card-top">
-                  <h3>{mat.name}</h3>
-                  <button
-                    type="button"
-                    className="text-button remove-operator"
-                    disabled={busy || materials.length === 1}
-                    title={
-                      materials.length === 1
-                        ? 'At least one material must remain.'
-                        : `Remove material ${mat.name}`
-                    }
-                    onClick={() => handleRemoveMaterial(mat)}
-                  >
-                    Remove material
-                  </button>
+                  <div className="material-card-title">
+                    <h3>{mat.name}</h3>
+                    {mat.is_default && (
+                      <span className="default-filament-badge">Default material</span>
+                    )}
+                  </div>
+                  <div className="material-card-actions">
+                    {!mat.is_default && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        aria-label={`Set ${mat.name} as default material`}
+                        onClick={() => handleSetDefaultMaterial(mat)}
+                      >
+                        Set as default
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="text-button remove-operator"
+                      disabled={busy || materials.length === 1}
+                      title={
+                        materials.length === 1
+                          ? 'At least one material must remain.'
+                          : `Remove material ${mat.name}`
+                      }
+                      onClick={() => handleRemoveMaterial(mat)}
+                    >
+                      Remove material
+                    </button>
+                  </div>
                 </div>
 
                 <div className="color-badge-list" aria-label={`Colours for ${mat.name}`}>
                   {mat.colors.map(col => (
-                    <span key={col.id ?? col.name} className="color-badge">
+                    <span
+                      key={col.id ?? col.name}
+                      className={`color-badge ${col.is_default ? 'is-default' : ''}`}
+                    >
                       <i
                         className={`swatch ${col.name.toLowerCase()}`}
                         style={{ backgroundColor: resolveColor(col.name, col.code) }}
                       />
                       <span>{col.name}</span>
+                      {col.is_default ? (
+                        <span
+                          className="color-default-tag"
+                          aria-label={`Default colour for ${mat.name}`}
+                        >
+                          Default
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="set-default-color"
+                          disabled={busy}
+                          title={`Set ${col.name} as default colour for ${mat.name}`}
+                          aria-label={`Set ${col.name} as default colour for ${mat.name}`}
+                          onClick={() => handleSetDefaultColor(mat, col)}
+                        >
+                          Set default
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="remove-color"

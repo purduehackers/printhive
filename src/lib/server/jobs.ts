@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from './db';
 import { config } from './config';
-import { metadata, batchMetadata } from './validation';
+import { metadata, batchMetadata, validateGroupName, type AllowedMaterial } from './validation';
 import { seal, unseal } from './tokens';
 import { invariant, HttpError } from './errors';
 import { removeFile, storeUpload } from './storage';
@@ -11,15 +11,22 @@ import { logError, logFailure } from './log';
 import { listMaterialsWithColors } from './materials';
 
 async function loadAllowedMaterials() {
-  let allowedMaterials: { name: string; colors: string[] }[] | undefined;
+  let allowedMaterials: AllowedMaterial[] | undefined;
   try {
     const mats = await listMaterialsWithColors();
-    if (mats.length) allowedMaterials = mats.map(m => ({ name: m.name, colors: m.colors.map(c => c.name) }));
+    if (mats.length) {
+      allowedMaterials = mats.map(m => ({
+        name: m.name,
+        is_default: m.is_default,
+        colors: m.colors.map(c => c.name),
+        defaultColor: (m.colors.find(c => c.is_default) ?? m.colors[0])?.name,
+      }));
+    }
   } catch { /* Fallback to default validation if DB not ready */ }
   return allowedMaterials;
 }
 
-export async function reserve(input: unknown) {
+export async function reserve(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
   const data = metadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const id = randomUUID(), expires = now + config().uploadTTL;
@@ -34,19 +41,26 @@ export async function reserve(input: unknown) {
     WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < ${MAX_BATCH_SIZE * 3}
     RETURNING id`;
   invariant(rows.length, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
-  return { id, capability };
+  const verified = Boolean(verifiedEmail && verifiedEmail.toLowerCase() === data.email.toLowerCase());
+  return { id, capability, verified };
 }
 
-export async function reserveBatch(input: unknown) {
+export async function reserveBatch(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
   const itemsData = batchMetadata(input, allowedMaterials), sql = await db(), now = Date.now();
   const expires = now + config().uploadTTL;
+  const batchId = randomUUID();
+  const batchTitle = itemsData[0].batch_title;
+  const groupName = itemsData[0].group_name;
   const ids = itemsData.map(() => randomUUID());
   // Seal all capabilities and the batch token first so misconfiguration leaves no incomplete submission.
   const items = itemsData.map((data, idx) => ({
     id: ids[idx],
     title: data.title,
     original_filename: data.original_filename,
+    batch_id: batchId,
+    batch_title: batchTitle,
+    group_name: groupName,
     capability: seal(ids[idx], 'upload', expires),
   }));
   const batchToken = seal(ids, 'upload', expires);
@@ -56,16 +70,23 @@ export async function reserveBatch(input: unknown) {
     const data = itemsData[i], id = ids[i];
     await sql`
       INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, support_angle, copies, mirror,
-        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
+        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, batch_id, batch_title, group_name)
       VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
         ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
-        'reserved', ${now + 86400000}, ${expires}, ${now + i})`;
+        'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name})`;
   }
-  return { items, batchToken };
+  const verified = Boolean(verifiedEmail && verifiedEmail.toLowerCase() === itemsData[0].email.toLowerCase());
+  return { batchId, batchTitle, groupName, items, batchToken, verified };
 }
 
 let activeUploads = 0;
-export async function upload(id: string, token: string, request: Request, mailer: Mailer = sendMail, { deferEmail = false }: { deferEmail?: boolean } = {}) {
+export async function upload(
+  id: string,
+  token: string,
+  request: Request,
+  mailer: Mailer = sendMail,
+  { deferEmail = false, verifiedEmail = null }: { deferEmail?: boolean; verifiedEmail?: string | null } = {},
+) {
   const payload = unseal(token, 'upload');
   invariant(payload.id === id && payload.ids.length === 1, 403, 'This upload link belongs to another print.');
   const sql = await db();
@@ -85,12 +106,25 @@ export async function upload(id: string, token: string, request: Request, mailer
     if (deferEmail) {
       return { id, uploaded: true };
     }
+    if (verifiedEmail && verifiedEmail.toLowerCase() === updated.email.toLowerCase()) {
+      const now = Date.now();
+      const [queuedJob] = await sql`UPDATE jobs
+        SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
+        WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+        RETURNING *`;
+      invariant(queuedJob, 410, 'The submission expired. Please submit again.');
+      return {
+        confirmed: true,
+        job: queuedJob,
+        message: 'Your print is queued. We’ll email you when the operator changes its status.',
+      };
+    }
     try { await mailer(confirmationMessage(updated, seal(id, 'confirm', expiry)), { jobId: id, purpose: 'confirmation' }); }
     catch (cause) { throw new HttpError(502, 'We could not send the confirmation email. Your submission was removed; please try again later.', { cause }); }
     const ready = await sql`UPDATE jobs SET upload_state = 'ready'
       WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
     invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
-    return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
+    return { confirmed: false, message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
   } catch (e) {
     logFailure('submission.failed', e, { jobId: id });
     if (claimed) {
@@ -106,7 +140,11 @@ export async function upload(id: string, token: string, request: Request, mailer
   } finally { activeUploads--; }
 }
 
-export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMail) {
+export async function finalizeBatch(
+  batchToken: string,
+  mailer: Mailer = sendMail,
+  { verifiedEmail = null }: { verifiedEmail?: string | null } = {},
+) {
   const payload = unseal(batchToken, 'upload');
   const ids = payload.ids;
   const sql = await db();
@@ -120,6 +158,24 @@ export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMai
   }
   const expiry = Date.now() + 86400000;
   try {
+    if (verifiedEmail && jobs.every(j => j.email.toLowerCase() === verifiedEmail.toLowerCase())) {
+      const now = Date.now();
+      const updatedJobs: Job[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const [queuedJob]: Job[] = await sql`UPDATE jobs
+          SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+          WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+          RETURNING *`;
+        invariant(queuedJob, 410, 'The batch upload expired. Please try again.');
+        updatedJobs.push(queuedJob);
+      }
+      return {
+        confirmed: true,
+        jobs: updatedJobs,
+        message: 'Your prints are grouped and queued. We’ll email you when an operator changes their status.',
+      };
+    }
     for (const id of ids) {
       const updated = await sql`UPDATE jobs SET pending_expires_at = ${expiry}
         WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${Date.now()} RETURNING id`;
@@ -135,7 +191,7 @@ export async function finalizeBatch(batchToken: string, mailer: Mailer = sendMai
         WHERE id = ${id} AND upload_state = 'uploaded' AND upload_expires_at > ${Date.now()} RETURNING id`;
       invariant(ready.length, 410, 'The submission expired. Please submit again, even if an email arrived.');
     }
-    return { message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
+    return { confirmed: false, message: 'Check your Purdue email. Open the link and confirm within 24 hours to join the queue.' };
   } catch (e) {
     logFailure('submission.failed', e, { jobId: ids[0] });
     try {
@@ -196,7 +252,7 @@ export async function confirmation(token: string, commit = false) {
 }
 export async function publicQueue(): Promise<PublicJob[]> {
   const sql = await db();
-  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version
+  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version, batch_id, batch_title, group_name
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
 }
@@ -305,14 +361,63 @@ export async function batchUpdateStatus(
     }
   }
 
+  const byRecipient = new Map<string, Job[]>();
   for (const job of toNotify) {
+    const key = job.email.toLowerCase();
+    if (!byRecipient.has(key)) byRecipient.set(key, []);
+    byRecipient.get(key)!.push(job);
+  }
+
+  for (const recipientJobs of byRecipient.values()) {
     try {
-      await mailer(statusMessage(job, feedback), { jobId: job.id, purpose: 'status' });
+      await mailer(statusMessage(recipientJobs, feedback), { jobId: recipientJobs[0].id, purpose: 'status' });
     } catch (error) {
-      logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
-      warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+      for (const job of recipientJobs) {
+        logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
+        warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+      }
     }
   }
 
   return { updated, unchanged, errors, warnings };
+}
+
+export async function updateJobGroup(
+  rawIds: unknown,
+  rawGroupName: unknown,
+  operator: number,
+  { ungroup = false }: { ungroup?: boolean } = {}
+): Promise<{ updated: Job[]; group_name: string | null }> {
+  invariant(Number.isSafeInteger(operator) && operator > 0, 401, 'Please log in as an operator.');
+  const groupName = ungroup ? null : validateGroupName(rawGroupName);
+  const sql = await db();
+
+  if (ungroup && (!Array.isArray(rawIds) || rawIds.length === 0)) {
+    const targetName = validateGroupName(rawGroupName);
+    invariant(targetName, 400, 'Specify a group name or print IDs to ungroup.');
+    const updated: Job[] = await sql`
+      UPDATE jobs SET group_name = NULL
+      WHERE group_name = ${targetName} AND confirmed_at IS NOT NULL
+      RETURNING *`;
+    return { updated, group_name: null };
+  }
+
+  invariant(Array.isArray(rawIds) && rawIds.length > 0 && rawIds.length <= 100, 400, 'Must provide between 1 and 100 prints to group.');
+  const ids = Array.from(new Set(rawIds.map(id => {
+    invariant(typeof id === 'string' && id.trim().length > 0, 400, 'Invalid print ID.');
+    return id.trim();
+  })));
+
+  const updated: Job[] = [];
+  await sql.begin(async tx => {
+    for (const id of ids) {
+      const [row]: Job[] = await tx`
+        UPDATE jobs SET group_name = ${groupName}
+        WHERE id = ${id} AND confirmed_at IS NOT NULL
+        RETURNING *`;
+      if (row) updated.push(row);
+    }
+  });
+
+  return { updated, group_name: groupName };
 }

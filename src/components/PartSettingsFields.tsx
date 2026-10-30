@@ -36,7 +36,10 @@ export default function PartSettingsFields({
       ? {
           copies: 1,
           mirror: false,
-          overrides: { ...overrides, color: global.color },
+          overrides: (() => {
+            const { color: _, ...rest } = overrides;
+            return rest;
+          })(),
         }
       : undefined,
     materials,

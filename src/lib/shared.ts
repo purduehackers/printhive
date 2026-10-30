@@ -20,11 +20,13 @@ export interface MaterialColor {
   material_id: number;
   name: string;
   code: string;
+  is_default?: boolean;
   created_at?: number;
 }
 export interface Material {
   id: number;
   name: string;
+  is_default?: boolean;
   created_at?: number;
   colors: MaterialColor[];
 }
@@ -80,6 +82,7 @@ export function previewColor(name: string, customCode?: string): string {
 }
 export interface PublicJob extends PrintSettings {
   id: string; title: string; status: Status; queued_at: number; confirmed_at: number; version: number;
+  batch_id?: string | null; batch_title?: string | null; group_name?: string | null;
 }
 export interface Job extends Omit<PublicJob, 'status'> {
   status: Status | 'pending_confirmation'; email: string; notes: string; original_filename: string;
@@ -88,6 +91,127 @@ export interface Job extends Omit<PublicJob, 'status'> {
 }
 export const reference = (id: string) => id.slice(0, 8).toUpperCase();
 export const supportLabel = (value: string) => value === 'operator' ? 'Operator decides' : value === 'tree' ? 'Tree' : value === 'normal' ? 'Regular' : 'None';
+
+export function effectiveGroupName(job: Pick<PublicJob, 'group_name' | 'batch_title'>): string | null {
+  if (typeof job.group_name === 'string' && job.group_name.trim()) return job.group_name.trim();
+  if (job.group_name === null && job.batch_title !== undefined) return null;
+  if (typeof job.batch_title === 'string' && job.batch_title.trim()) return job.batch_title.trim();
+  return null;
+}
+
+export interface GroupStatusSummary {
+  status: Status;
+  label: string;
+  mixed: boolean;
+  counts: Partial<Record<Status, number>>;
+  total: number;
+}
+
+const STATUS_PRIORITY: Record<Status, number> = {
+  printing: 0,
+  queued: 1,
+  completed: 2,
+  rejected: 3,
+  failed: 4,
+  canceled: 5,
+};
+
+export function summarizeGroupStatus(jobs: readonly { status: Status | 'pending_confirmation' }[]): GroupStatusSummary {
+  const counts: Partial<Record<Status, number>> = {};
+  for (const job of jobs) {
+    const s = (job.status === 'pending_confirmation' ? 'queued' : job.status) as Status;
+    counts[s] = (counts[s] ?? 0) + 1;
+  }
+  const present = (Object.keys(counts) as Status[]).sort((a, b) => (STATUS_PRIORITY[a] ?? 99) - (STATUS_PRIORITY[b] ?? 99));
+  if (present.length === 0) {
+    return { status: 'queued', label: 'queued', mixed: false, counts, total: 0 };
+  }
+  if (present.length === 1) {
+    const status = present[0];
+    return { status, label: status, mixed: false, counts, total: jobs.length };
+  }
+  const dominant = present[0];
+  const label = present.map(s => `${counts[s]} ${s}`).join(' · ');
+  return { status: dominant, label, mixed: true, counts, total: jobs.length };
+}
+
+export type SortOption = 'queue' | 'group' | 'status' | 'material-color' | 'submitter' | 'title' | 'newest';
+
+export function sortJobs<T extends Omit<PublicJob, 'status'> & { status: Status | 'pending_confirmation'; email?: string; created_at?: number }>(
+  jobs: readonly T[],
+  sortBy: SortOption,
+  getGroup: (job: T) => string | null = effectiveGroupName,
+): T[] {
+  const list = [...jobs];
+  const compareQueueOrder = (a: T, b: T) => {
+    const rank = (s: string) => s === 'printing' ? 0 : s === 'queued' ? 1 : 2;
+    const ra = rank(a.status), rb = rank(b.status);
+    if (ra !== rb) return ra - rb;
+    if (ra <= 1) {
+      const qa = a.queued_at ?? a.confirmed_at ?? 0;
+      const qb = b.queued_at ?? b.confirmed_at ?? 0;
+      if (qa !== qb) return qa - qb;
+    } else {
+      const ca = a.created_at ?? a.confirmed_at ?? 0;
+      const cb = b.created_at ?? b.confirmed_at ?? 0;
+      if (ca !== cb) return cb - ca;
+    }
+    return a.id.localeCompare(b.id);
+  };
+
+  if (sortBy === 'queue') {
+    return list.sort(compareQueueOrder);
+  }
+  if (sortBy === 'group') {
+    return list.sort((a, b) => {
+      const ga = getGroup(a), gb = getGroup(b);
+      if (ga && !gb) return -1;
+      if (!ga && gb) return 1;
+      if (ga && gb && ga !== gb) return ga.localeCompare(gb);
+      if (a.batch_id && b.batch_id && a.batch_id !== b.batch_id) return a.batch_id.localeCompare(b.batch_id);
+      return compareQueueOrder(a, b);
+    });
+  }
+  if (sortBy === 'status') {
+    return list.sort((a, b) => {
+      const pa = STATUS_PRIORITY[a.status as Status] ?? 99;
+      const pb = STATUS_PRIORITY[b.status as Status] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return compareQueueOrder(a, b);
+    });
+  }
+  if (sortBy === 'material-color') {
+    return list.sort((a, b) => {
+      const ma = `${a.material ?? 'PLA'} · ${a.color}`.toLowerCase();
+      const mb = `${b.material ?? 'PLA'} · ${b.color}`.toLowerCase();
+      if (ma !== mb) return ma.localeCompare(mb);
+      return compareQueueOrder(a, b);
+    });
+  }
+  if (sortBy === 'submitter') {
+    return list.sort((a, b) => {
+      const ea = (a.email ?? '').toLowerCase();
+      const eb = (b.email ?? '').toLowerCase();
+      if (ea !== eb) return ea.localeCompare(eb);
+      return compareQueueOrder(a, b);
+    });
+  }
+  if (sortBy === 'title') {
+    return list.sort((a, b) => {
+      const cmp = a.title.localeCompare(b.title);
+      return cmp !== 0 ? cmp : compareQueueOrder(a, b);
+    });
+  }
+  if (sortBy === 'newest') {
+    return list.sort((a, b) => {
+      const ca = a.created_at ?? a.confirmed_at ?? a.queued_at ?? 0;
+      const cb = b.created_at ?? b.confirmed_at ?? b.queued_at ?? 0;
+      if (ca !== cb) return cb - ca;
+      return a.id.localeCompare(b.id);
+    });
+  }
+  return list;
+}
 
 export interface PrinterSpec {
   id: string;

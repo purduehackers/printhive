@@ -3,11 +3,101 @@ import Layout from '../../../layouts/Layout.astro';
 import StatusControls from '../../../components/StatusControls';
 import { currentOperator } from '../../../lib/server/auth';
 import { db } from '../../../lib/server/db';
-import { reference, resolveColor, supportLabel, type Job, type Status } from '../../../lib/shared';
+import { effectiveGroupName, reference, resolveColor, summarizeGroupStatus, supportLabel, type Job, type Status } from '../../../lib/shared';
 if (!await currentOperator(Astro)) return Astro.redirect('/operator/login');
 const sql = await db();
 const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${Astro.params.id ?? ''} AND confirmed_at IS NOT NULL`;
 if (!job) { Astro.response.status = 404; }
 const events: { previous_status: string; next_status: string; feedback: string; username: string | null; created_at: number }[] = job ? await sql`SELECT e.*, o.username FROM job_events e LEFT JOIN operators o ON o.id = e.operator_id WHERE job_id = ${job.id} ORDER BY e.id DESC` : [];
+const groupLabel = job ? effectiveGroupName(job) : null;
+const groupJobs: Job[] = job && (job.batch_id || groupLabel)
+  ? await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL AND (
+      (${job.batch_id ?? null} IS NOT NULL AND batch_id = ${job.batch_id ?? null})
+      OR (${groupLabel} IS NOT NULL AND group_name = ${groupLabel})
+    ) ORDER BY queued_at ASC, created_at ASC, id ASC`
+  : [];
+const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { status: Status }[]) : null;
 ---
-<Layout title={job?.title ?? 'Print not found'} active="operator"><div class="page-heading"><a class="back-link" href="/operator">← Operator workspace</a><p class="eyebrow">{job ? `Print #${reference(job.id)}` : '404'}</p><h1>{job?.title ?? 'Print not found.'}</h1>{job && <p>{job.email}</p>}</div>{job && <div class="detail-grid"><div><section class="detail-card"><div class="section-heading"><h2>Print instructions</h2><a class="button secondary" href={`/api/jobs/${job.id}/file`}>Download STL ↓</a></div><p class="small muted">{job.original_filename} · {(job.file_size / 1024 ** 2).toFixed(2)} MiB</p><dl class="settings-grid"><div><dt>Material</dt><dd>{job.material ?? 'PLA'}</dd></div><div><dt>Filament</dt><dd><i class={`swatch ${job.color.toLowerCase()}`} style={`background-color: ${resolveColor(job.color)};`} />{job.color}</dd></div><div><dt>Infill</dt><dd>{job.infill}%</dd></div><div><dt>Layer height</dt><dd>{job.layer_height} mm</dd></div><div><dt>Supports</dt><dd>{supportLabel(job.supports)}</dd></div><div><dt>Support angle</dt><dd>{job.support_angle == null ? 'Printer default' : `${job.support_angle}°`}</dd></div><div><dt>Copies</dt><dd>{job.copies}</dd></div><div><dt>Mirror X axis</dt><dd>{job.mirror ? 'Yes' : 'No'}</dd></div></dl><h3>Operator notes</h3><p class="operator-notes">{job.notes || 'No notes provided.'}</p></section><section class="detail-card"><h2>Status history</h2><ul class="history">{events.map(event => <li><strong>{event.previous_status} → {event.next_status}</strong><span>{event.username ?? 'Operator'} · {new Date(event.created_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>{event.feedback && <p class="operator-notes">{event.feedback}</p>}</li>)}<li><strong>Email confirmed · joined the queue</strong><span>{new Date(job.confirmed_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span></li></ul></section></div><StatusControls id={job.id} status={job.status as Status} version={job.version} client:load /></div>}</Layout>
+<Layout title={job?.title ?? 'Print not found'} active="operator">
+  <div class="page-heading">
+    <a class="back-link" href="/operator">← Operator workspace</a>
+    <p class="eyebrow">
+      {job ? `Print #${reference(job.id)}` : '404'}
+      {groupLabel && <span class="group-badge">{groupLabel}</span>}
+    </p>
+    <h1>{job?.title ?? 'Print not found.'}</h1>
+    {job && <p>{job.email}</p>}
+  </div>
+  {job && (
+    <div class="detail-grid">
+      <div>
+        <section class="detail-card">
+          <div class="section-heading">
+            <h2>Print instructions</h2>
+            <a class="button secondary" href={`/api/jobs/${job.id}/file`}>Download STL ↓</a>
+          </div>
+          <p class="small muted">{job.original_filename} · {(job.file_size / 1024 ** 2).toFixed(2)} MiB</p>
+          <dl class="settings-grid">
+            <div><dt>Material</dt><dd>{job.material ?? 'PLA'}</dd></div>
+            <div><dt>Filament</dt><dd><i class={`swatch ${job.color.toLowerCase()}`} style={`background-color: ${resolveColor(job.color)};`} />{job.color}</dd></div>
+            <div><dt>Infill</dt><dd>{job.infill}%</dd></div>
+            <div><dt>Layer height</dt><dd>{job.layer_height} mm</dd></div>
+            <div><dt>Supports</dt><dd>{supportLabel(job.supports)}</dd></div>
+            <div><dt>Support angle</dt><dd>{job.support_angle == null ? 'Printer default' : `${job.support_angle}°`}</dd></div>
+            <div><dt>Copies</dt><dd>{job.copies}</dd></div>
+            {groupLabel && <div><dt>Group / Batch</dt><dd>{groupLabel}</dd></div>}
+          </dl>
+          <h3>Operator notes</h3>
+          <p class="operator-notes">{job.notes || 'No notes provided.'}</p>
+        </section>
+        {groupJobs.length > 1 && (
+          <section class="detail-card">
+            <div class="section-heading">
+              <h2>Batch / Group prints ({groupJobs.length})</h2>
+              {groupSummary && <span class={`status ${groupSummary.status}`}>{groupSummary.label}</span>}
+            </div>
+            <ul class="batch-detail-list">
+              {groupJobs.map(member => (
+                <li class={member.id === job.id ? 'current-member' : ''}>
+                  <div>
+                    <a class="job-title" href={`/operator/jobs/${member.id}`}>{member.title}</a>
+                    <span class="mono small muted"> #{reference(member.id)}</span>
+                    <div class="small muted">{member.material ?? 'PLA'} · {member.color} · {member.copies}×</div>
+                  </div>
+                  <div class="batch-member-actions">
+                    <span class={`status ${member.status}`}>{member.status}</span>
+                    <a class="text-button" href={`/api/jobs/${member.id}/file`}>STL ↓</a>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <section class="detail-card">
+          <h2>Status history</h2>
+          <ul class="history">
+            {events.map(event => (
+              <li>
+                <strong>{event.previous_status} → {event.next_status}</strong>
+                <span>{event.username ?? 'Operator'} · {new Date(event.created_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
+                {event.feedback && <p class="operator-notes">{event.feedback}</p>}
+              </li>
+            ))}
+            <li>
+              <strong>Email confirmed · joined the queue</strong>
+              <span>{new Date(job.confirmed_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <StatusControls
+        id={job.id}
+        status={job.status as Status}
+        version={job.version}
+        groupName={groupLabel}
+        groupJobs={groupJobs.map(g => ({ id: g.id, title: g.title, status: g.status as Status, version: g.version }))}
+        client:load
+      />
+    </div>
+  )}
+</Layout>

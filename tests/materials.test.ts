@@ -7,8 +7,10 @@ import {
   listMaterialsWithColors,
   addMaterial,
   removeMaterial,
+  setDefaultMaterial,
   addColor,
   removeColor,
+  setDefaultColor,
 } from '../src/lib/server/materials';
 import { reserve, upload, confirmation, publicQueue } from '../src/lib/server/jobs';
 import { submission, asciiSTL } from './fixtures';
@@ -37,7 +39,9 @@ describe('Material and colour management', () => {
     const materials = await listMaterialsWithColors();
     expect(materials).toHaveLength(1);
     expect(materials[0].name).toBe('PLA');
+    expect(materials[0].is_default).toBe(true);
     expect(materials[0].colors.map(c => c.name)).toEqual(['black', 'white', 'yellow', 'red']);
+    expect(materials[0].colors.map(c => c.is_default)).toEqual([true, false, false, false]);
   });
 
   test('operators can add different material types and specify colours', async () => {
@@ -149,5 +153,56 @@ describe('Material and colour management', () => {
     await expect(
       reserve(submission({ material: 'CarbonFiber', color: 'black' }))
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  test('operators can choose default material and default colour per material, with fallback on deletion', async () => {
+    const initial = await listMaterialsWithColors();
+    const pla = initial.find(m => m.name === 'PLA')!;
+    const petg = initial.find(m => m.name === 'PETG')!;
+    const petgBlack = petg.colors.find(c => c.name === 'black')!;
+    const plaYellow = pla.colors.find(c => c.name === 'yellow')!;
+
+    // Set PETG as default material
+    const afterMatDefault = await setDefaultMaterial(1, petg.id);
+    expect(afterMatDefault.find(m => m.name === 'PETG')?.is_default).toBe(true);
+    expect(afterMatDefault.find(m => m.name === 'PLA')?.is_default).toBe(false);
+
+    // Set black as default colour for PETG, and yellow as default colour for PLA
+    await setDefaultColor(1, petg.id, petgBlack.id);
+    const afterColDefault = await setDefaultColor(1, pla.id, plaYellow.id);
+    expect(
+      afterColDefault.find(m => m.name === 'PETG')?.colors.find(c => c.is_default)?.name,
+    ).toBe('black');
+    expect(
+      afterColDefault.find(m => m.name === 'PLA')?.colors.find(c => c.is_default)?.name,
+    ).toBe('yellow');
+
+    // Submitting without explicit material/color uses the operator's configured defaults (PETG + black)
+    const defaultPayload = submission();
+    delete (defaultPayload as Record<string, unknown>).material;
+    delete (defaultPayload as Record<string, unknown>).color;
+    const r = await reserve(defaultPayload);
+    await upload(r.id, r.capability, body(), mailer);
+    const token = new URL(accepted.at(-1)!.match(/http[^\s]+\/confirm\?token=[^\s]+/)![0]).searchParams.get('token')!;
+    await confirmation(token, true);
+    const queue = await publicQueue();
+    const queuedJob = queue.find(j => j.id === r.id);
+    expect(queuedJob?.material).toBe('PETG');
+    expect(queuedJob?.color).toBe('black');
+
+    // Deleting the default colour for PETG promotes the remaining colour ('orange') to default
+    await removeColor(1, petg.id, petgBlack.id);
+    const afterRemoveCol = await listMaterialsWithColors();
+    expect(
+      afterRemoveCol.find(m => m.name === 'PETG')?.colors.find(c => c.is_default)?.name,
+    ).toBe('orange');
+
+    // Deleting the default material (PETG) promotes PLA back to default material
+    await removeMaterial(1, petg.id);
+    const afterRemoveMat = await listMaterialsWithColors();
+    expect(afterRemoveMat).toHaveLength(1);
+    expect(afterRemoveMat[0].name).toBe('PLA');
+    expect(afterRemoveMat[0].is_default).toBe(true);
+    expect(afterRemoveMat[0].colors.find(c => c.is_default)?.name).toBe('yellow');
   });
 });

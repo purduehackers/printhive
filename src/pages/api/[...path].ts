@@ -1,13 +1,14 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
-import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus } from '../../lib/server/jobs';
+import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus, updateJobGroup } from '../../lib/server/jobs';
 import { login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
 import { invariant } from '../../lib/server/errors';
 import { reference } from '../../lib/shared';
 import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
-import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial } from '../../lib/server/materials';
+import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial, setDefaultColor, setDefaultMaterial } from '../../lib/server/materials';
+import { VERIFIED_EMAIL_COOKIE, getVerifiedEmail } from '../../lib/server/tokens';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
@@ -17,25 +18,29 @@ export const ALL: APIRoute = async (context) => {
       const sql = await db(); await sql`SELECT id FROM jobs LIMIT 1`;
       return json({ ok: true });
     }
+    if (path === 'verified-email' && method === 'DELETE') {
+      context.cookies.delete(VERIFIED_EMAIL_COOKIE, { path: '/' });
+      return json({ ok: true });
+    }
     if (path === 'submissions' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
       const body = await smallBody(request);
-      return json(await reserve(body), 201);
+      return json(await reserve(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
     }
     if (path === 'submissions/batch' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
       const body = await smallBody(request);
-      return json(await reserveBatch(body), 201);
+      return json(await reserveBatch(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
     }
     if (path === 'submissions/batch/finalize' && method === 'POST') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
-      return json(await finalizeBatch(token));
+      return json(await finalizeBatch(token, undefined, { verifiedEmail: getVerifiedEmail(context) }));
     }
     const uploadMatch = /^submissions\/([a-f0-9-]{36})\/file$/.exec(path);
     if (uploadMatch && method === 'PUT') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       const deferEmail = new URL(request.url).searchParams.get('batch') === '1';
-      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail }));
+      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail, verifiedEmail: getVerifiedEmail(context) }));
     }
     if (path === 'login' && method === 'POST') {
       rateLimit('login:' + clientIP(context), 10, 900000);
@@ -61,7 +66,13 @@ export const ALL: APIRoute = async (context) => {
       const actor = await requireOperator(context), id = Number(materialMatch[1]);
       rateLimit('materials:' + actor.id, 60, 900000);
       await removeMaterial(actor.id, id);
-      return json({ ok: true });
+      return json({ ok: true, materials: await listMaterialsWithColors() });
+    }
+    const materialDefaultMatch = /^materials\/([1-9][0-9]*)\/default$/.exec(path);
+    if (materialDefaultMatch && ['POST', 'PATCH'].includes(method)) {
+      const actor = await requireOperator(context), id = Number(materialDefaultMatch[1]);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      return json({ materials: await setDefaultMaterial(actor.id, id) });
     }
     const materialColorMatch = /^materials\/([1-9][0-9]*)\/colors$/.exec(path);
     if (materialColorMatch && method === 'POST') {
@@ -74,7 +85,13 @@ export const ALL: APIRoute = async (context) => {
       const actor = await requireOperator(context), materialId = Number(colorDeleteMatch[1]), colorId = Number(colorDeleteMatch[2]);
       rateLimit('materials:' + actor.id, 60, 900000);
       await removeColor(actor.id, materialId, colorId);
-      return json({ ok: true });
+      return json({ ok: true, materials: await listMaterialsWithColors() });
+    }
+    const colorDefaultMatch = /^materials\/([1-9][0-9]*)\/colors\/([1-9][0-9]*)\/default$/.exec(path);
+    if (colorDefaultMatch && ['POST', 'PATCH'].includes(method)) {
+      const actor = await requireOperator(context), materialId = Number(colorDefaultMatch[1]), colorId = Number(colorDefaultMatch[2]);
+      rateLimit('materials:' + actor.id, 60, 900000);
+      return json({ materials: await setDefaultColor(actor.id, materialId, colorId) });
     }
     if (path === 'operators' && ['GET', 'POST'].includes(method)) {
       const actor = await requireOperator(context);
@@ -123,6 +140,12 @@ export const ALL: APIRoute = async (context) => {
       rateLimit('status:' + operator.id, 120, 900000);
       const items = (body as any).items ?? (body as any).ids;
       return json(await batchUpdateStatus(items, (body as any).status, operator.id, { feedback: (body as any).feedback }));
+    }
+    if (path === 'jobs/group' && ['POST', 'PATCH'].includes(method)) {
+      const operator = await requireOperator(context), body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Invalid group update.');
+      rateLimit('group:' + operator.id, 120, 900000);
+      return json(await updateJobGroup((body as any).ids, (body as any).group_name, operator.id, { ungroup: Boolean((body as any).ungroup) }));
     }
     return json({ error: 'Endpoint not found.' }, 404);
   } catch (error) { return errorResponse(error, request); }
