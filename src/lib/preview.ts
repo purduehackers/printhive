@@ -17,6 +17,52 @@ export const PREVIEW_PROFILE_FILES: Record<string, string> = {
   'bambu-h2d': '/preview-profiles/h2d.json',
 };
 
+// Omitting these lets Orca silently use generic defaults, including a 2 mm³/s PLA flow cap.
+const positiveTimingSettings = [
+  'outer_wall_speed',
+  'inner_wall_speed',
+  'sparse_infill_speed',
+  'internal_solid_infill_speed',
+  'top_surface_speed',
+  'initial_layer_speed',
+  'travel_speed',
+  'support_speed',
+  'support_interface_speed',
+  'default_acceleration',
+  'machine_max_acceleration_x',
+  'machine_max_acceleration_y',
+  'machine_max_speed_x',
+  'machine_max_speed_y',
+  'line_width',
+];
+const nonnegativeTimingSettings = [
+  'filament_max_volumetric_speed',
+  'slow_down_layer_time',
+  'slow_down_min_speed',
+];
+function timingNumber(value: unknown): number {
+  const scalar = Array.isArray(value) ? value[0] : value;
+  return typeof scalar === 'number' ||
+    (typeof scalar === 'string' && scalar.trim() !== '')
+    ? Number(scalar)
+    : NaN;
+}
+function requireTimingSettings(config: PreviewProfile['configuration']) {
+  for (const key of [...positiveTimingSettings, ...nonnegativeTimingSettings]) {
+    const value = timingNumber(config[key]);
+    if (
+      !Number.isFinite(value) ||
+      value < 0 ||
+      (value === 0 && positiveTimingSettings.includes(key))
+    )
+      throw new Error(`Complete printer timing settings required: ${key}`);
+  }
+  if (![0, 1].includes(timingNumber(config.slow_down_for_layer_cooling)))
+    throw new Error(
+      'Complete printer timing settings required: slow_down_for_layer_cooling',
+    );
+}
+
 /** An effective configuration, not an unresolved desktop preset with parents. */
 export function parsePreviewProfile(
   value: unknown,
@@ -53,6 +99,7 @@ export function parsePreviewProfile(
     throw new Error(
       'Use a resolved, single-nozzle preview profile with the default support style.',
     );
+  requireTimingSettings(config);
   return {
     id: profile.id,
     label: profile.label,

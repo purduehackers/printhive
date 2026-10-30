@@ -59,10 +59,15 @@ keys. The website does not fetch presets or run this importer at runtime.
    A per-model support angle overrides `support_threshold_angle`; blank preserves it.
    Per-model settings override Default settings.
 
-Profiles load once per printer per page with stale HTTP copies disabled. The completed
+Profiles are fetched again on file selection, printer changes and retry, with stale HTTP
+copies disabled. A response is bound to that file/printer/retry; old settings cannot start
+a new estimate. The completed
 preview cache includes the entire effective configuration, so changed settings cannot
 reuse a previous settings result. Reloading clears the page cache. Missing, invalid,
-unresolved or wrong-printer profiles make estimates unavailable; submission still works.
+unresolved, incomplete or wrong-printer profiles make estimates unavailable; submission
+still works. Timing-critical speeds, machine limits, volumetric flow and cooling options
+must be explicit. An omitted flow limit is rejected instead of inheriting Orca’s generic 2
+mm³/s cap; explicit zero still means unlimited flow.
 
 ## Source and adaptation decision — 26 October 2026
 
@@ -136,3 +141,29 @@ generates them with both tree and regular supports. The imported tree settings a
 support this bar at 35°; generated polygons match the same engine’s full-preparation
 reference at both 35° and 80° for both support types. It checks file isolation, cached return to default,
 invalid-input recovery and the saved operator instructions.
+
+## Timing investigation — 30 October 2026
+
+Six local models, both printers and all three support choices gave 36 comparisons
+with full Orca 2.4.2 slicing at the same orientation, scale, 0.2 mm layers and 15%
+infill. Earlier starter configurations were +6.97% to +252.14% above the intended
+printer-profile Orca references (median +109.13%). Those starters inherited a
+2 mm³/s generic flow cap and generic motion settings. Current resolved printer
+profiles ranged from −30.89% to +1.02%, with 20.27% median absolute difference.
+The old/current comparison deliberately changes configuration; only the current
+same-profile comparison measures the fast surrogate’s disagreement with Orca.
+
+The browser’s full reference includes G-code generation and native timing, not
+another call to the quick predictor. A desktop Orca 2.4.2 control for one model
+reported 19 min 8 s versus 19 min 0.11 s in browser full slicing. This is a narrow
+cross-check, not physical calibration or proof of desktop parity for every model.
+The standalone estimator checkout’s browser timing comparison tool records raw
+reports, profile/model hashes and aggregate error automatically. Local source STLs
+are not redistributed.
+
+The fix rejects incomplete timing profiles and refreshes valid profiles when a file
+is selected or a preview retried. Completed results still reuse identical effective
+settings. Reload an old page once to load this code. No blanket divisor or fitted
+correction was applied: current settings mostly underestimate this cohort already.
+Profiles improve the inputs; remaining surrogate error and actual physical timing
+remain unqualified.

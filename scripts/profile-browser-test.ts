@@ -135,6 +135,39 @@ try {
           .requestedProfiles.length,
     ),
   ).toBe(before + 1);
+  // Profile updates are picked up on file selection, even within an already-open page.
+  const stockFlow = core.configuration.filament_max_volumetric_speed;
+  core.configuration.filament_max_volumetric_speed = ['3'];
+  await page.getByRole('button', { name: /^h2d-part\.stl/ }).click();
+  await ready();
+  await page.getByRole('button', { name: /^core-part\.stl/ }).click();
+  await ready();
+  let refreshed = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          requestedProfiles: Array<{ configuration: Record<string, unknown> }>;
+        }
+      ).requestedProfiles,
+  );
+  expect(refreshed.at(-1)!.configuration.filament_max_volumetric_speed).toEqual(
+    ['3'],
+  );
+  const afterRefresh = refreshed.length;
+  core.configuration.filament_max_volumetric_speed = stockFlow;
+  await page.getByRole('button', { name: /^h2d-part\.stl/ }).click();
+  await ready();
+  await page.getByRole('button', { name: /^core-part\.stl/ }).click();
+  await ready();
+  refreshed = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          requestedProfiles: Array<{ configuration: Record<string, unknown> }>;
+        }
+      ).requestedProfiles,
+  );
+  expect(refreshed.length).toBe(afterRefresh); // Returning to unchanged settings uses the earlier result.
   // A broken fallback never borrows the smaller printer's settings.
   failH2d = true;
   await page.reload();
@@ -227,7 +260,7 @@ try {
   }
   expect(errors).toEqual([]);
   console.log(
-    'Per-printer JSON edits, actual worker configuration, Core ONE/H2D selection, cache reuse, profile failures, independent submission and all six shipped-profile/support combinations passed.',
+    'Per-printer JSON edits, actual worker configuration, Core ONE/H2D selection, cache reuse, profile refresh, profile failures, independent submission and all six shipped-profile/support combinations passed.',
   );
 } finally {
   await browser.close();

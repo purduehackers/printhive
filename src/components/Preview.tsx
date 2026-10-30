@@ -104,10 +104,13 @@ export default function Preview({
   const faceAction = useRef<(normal: number[]) => void>(() => {});
   const faceModeRef = useRef(false);
   const [loadedModel, setModel] = useState<Model | null>(null);
-  const [profiles, setProfiles] = useState<Record<string, PreviewProfile>>({});
-  const [profileErrors, setProfileErrors] = useState<Record<string, string>>(
-    {},
-  );
+  const [loadedProfile, setLoadedProfile] = useState<{
+    file: File;
+    printerId: string;
+    retry: number;
+    profile?: PreviewProfile;
+    error?: string;
+  } | null>(null);
   const [preview, setPreview] = useState<FastSupportPreview | null>(null);
   const [tab, setTab] = useState<"model" | "layers">("model");
   const [reading, setReading] = useState(false);
@@ -133,8 +136,14 @@ export default function Preview({
   const printer = model
     ? selectPreviewPrinter(modelDimensions)
     : PREVIEW_PRINTERS[0];
-  const profile = profiles[printer.id] ?? null;
-  const profileError = profileErrors[printer.id];
+  const activeProfile =
+    loadedProfile?.file === file &&
+    loadedProfile.printerId === printer.id &&
+    loadedProfile.retry === retry
+      ? loadedProfile
+      : null;
+  const profile = activeProfile?.profile ?? null;
+  const profileError = activeProfile?.error;
   const profileLoading = !profile && !profileError;
   const fits = model ? fitsPreviewPrinter(modelDimensions, printer) : true;
   const modelReady = Boolean(model);
@@ -173,13 +182,9 @@ export default function Preview({
   }, []);
 
   useEffect(() => {
-    if (profiles[printer.id]) return;
+    if (!file) return;
     const controller = new AbortController();
-    setProfileErrors((current) => {
-      const next = { ...current };
-      delete next[printer.id];
-      return next;
-    });
+    setLoadedProfile(null);
     fetch(PREVIEW_PROFILE_FILES[printer.id], {
       signal: controller.signal,
       cache: "no-store",
@@ -189,21 +194,23 @@ export default function Preview({
           throw new Error(`Missing printer settings (${response.status})`);
         return parsePreviewProfile(await response.json(), printer.id);
       })
-      .then((value) => {
+      .then((profile) => {
         if (!controller.signal.aborted)
-          setProfiles((current) => ({ ...current, [printer.id]: value }));
+          setLoadedProfile({ file, printerId: printer.id, retry, profile });
       })
       .catch(() => {
         if (!controller.signal.aborted)
-          setProfileErrors((current) => ({
-            ...current,
-            [printer.id]: `Couldn't load slicer settings for ${printer.name}. Reload to try again.`,
-          }));
+          setLoadedProfile({
+            file,
+            printerId: printer.id,
+            retry,
+            error: `Couldn't load slicer settings for ${printer.name}. Reload to try again.`,
+          });
       });
     return () => controller.abort();
-    // Profiles are loaded once per printer for this page. Switching printers
-    // selects that printer's cached settings rather than a previous printer's.
-  }, [printer]);
+    // Revalidate on file selection/retry. Unchanged configuration still reuses completed results.
+    // Bind the response to its file and printer so stale settings cannot start an estimate.
+  }, [file, printer, retry]);
 
   useEffect(() => {
     revision.current++;

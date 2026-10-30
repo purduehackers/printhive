@@ -102,3 +102,43 @@ test('each printer has an editable, identified profile; mismatched or unresolved
       expect(() => parsePreviewProfile(invalid, printer.id)).toThrow();
   }
 });
+
+test('incomplete timing profiles cannot inherit generic flow, speed, acceleration or cooling defaults', async () => {
+  const file = new URL(
+    '../public/preview-profiles/core-one.json',
+    import.meta.url,
+  );
+  const profile = await Bun.file(file).json();
+  for (const key of [
+    'filament_max_volumetric_speed',
+    'outer_wall_speed',
+    'default_acceleration',
+    'machine_max_speed_x',
+    'slow_down_layer_time',
+    'slow_down_for_layer_cooling',
+  ]) {
+    const configuration = { ...profile.configuration };
+    delete configuration[key];
+    expect(() =>
+      parsePreviewProfile({ ...profile, configuration }, profile.printerId),
+    ).toThrow(key);
+  }
+  for (const value of ['', [], ['nil'], ['NaN'], ['-1']]) {
+    const configuration = {
+      ...profile.configuration,
+      filament_max_volumetric_speed: value,
+    };
+    expect(() =>
+      parsePreviewProfile({ ...profile, configuration }, profile.printerId),
+    ).toThrow('filament_max_volumetric_speed');
+  }
+  // An explicit zero is Orca's unlimited-flow setting, distinct from an omitted value.
+  const configuration = {
+    ...profile.configuration,
+    filament_max_volumetric_speed: ['0'],
+  };
+  expect(
+    parsePreviewProfile({ ...profile, configuration }, profile.printerId)
+      .configuration.filament_max_volumetric_speed,
+  ).toEqual(['0']);
+});
