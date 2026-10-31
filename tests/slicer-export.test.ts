@@ -83,6 +83,32 @@ describe('native slicer project export', () => {
       expect(truncated).toBe(true);
     } finally { fileMock.mockRestore(); }
   });
+  test('exports repaired meshes larger than 16 KiB without trailing buffer bytes', async () => {
+    const count = 1500, triangles = count * 4;
+    const bytes = new Uint8Array(84 + triangles * 50), view = new DataView(bytes.buffer);
+    view.setUint32(80, triangles, true);
+    const vertices = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const faces = [[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]];
+    let faceIndex = 0;
+    for (let i = 0; i < count; i++) {
+      const ox = (i % 50) * 2, oy = Math.floor(i / 50) * 2;
+      for (const face of faces) {
+        const base = 84 + faceIndex++ * 50 + 12;
+        for (let v = 0; v < 3; v++) {
+          const point = vertices[face[v]];
+          view.setFloat32(base + v * 12, point[0] + ox, true);
+          view.setFloat32(base + v * 12 + 4, point[1] + oy, true);
+          view.setFloat32(base + v * 12 + 8, point[2], true);
+        }
+      }
+    }
+    const id = await job({ file_size: bytes.byteLength });
+    await Bun.write(filePath(`${id}.stl`), bytes);
+    const entries = await archive(await createSlicerProject(request([id])));
+    const geometry = [...entries].filter(([name]) => name.endsWith('.model')).map(([, value]) => value).join('');
+    expect(geometry.match(/<vertex /g)).toHaveLength(count * 4);
+    expect(geometry.match(/<triangle /g)).toHaveLength(triangles);
+  });
   test('preserves different settings and copies, omits private metadata, and emits a valid ZIP', async () => {
     const first = await job({ copies: 2, infill: 50, layer_height: 0.12, supports: 'tree', support_angle: 0 });
     const second = await job({ infill: 20, layer_height: 0.28, supports: 'normal', support_angle: 80 });

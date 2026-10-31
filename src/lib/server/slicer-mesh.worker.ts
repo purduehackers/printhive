@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { openSync, writeSync, closeSync } from 'node:fs';
 import { readSTL } from '@time-estimator/browser-preview/stl';
 
 // Disposable Bun process: Orca's synchronous WASM repair cannot block the web
@@ -10,11 +10,17 @@ try {
   const header = Buffer.alloc(20);
   header.write('TESTLM01'); header.writeUInt32LE(1, 8);
   header.writeUInt32LE(mesh.positions.length / 3, 12); header.writeUInt32LE(mesh.indices.length / 3, 16);
-  await writeFile(destination, (function* () {
-    yield header;
-    yield new Uint8Array(mesh.positions.buffer, mesh.positions.byteOffset, mesh.positions.byteLength);
-    yield new Uint8Array(mesh.indices.buffer, mesh.indices.byteOffset, mesh.indices.byteLength);
-  })(), { flag: 'wx', mode: 0o600 });
+  const fd = openSync(destination, 'wx', 0o600);
+  try {
+    for (const chunk of [
+      header,
+      new Uint8Array(mesh.positions.buffer, mesh.positions.byteOffset, mesh.positions.byteLength),
+      new Uint8Array(mesh.indices.buffer, mesh.indices.byteOffset, mesh.indices.byteLength),
+    ]) {
+      let offset = 0;
+      while (offset < chunk.byteLength) offset += writeSync(fd, chunk, offset, chunk.byteLength - offset);
+    }
+  } finally { closeSync(fd); }
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'Mesh import failed.');
   process.exitCode = 1;
