@@ -9,6 +9,7 @@ import { sendMail, confirmationMessage, statusMessage, type Mailer } from './mai
 import { MAX_BATCH_SIZE, MAX_FEEDBACK_LENGTH, transitions, type Job, type PublicJob, type Status } from '../shared';
 import { logError, logFailure } from './log';
 import { listMaterialsWithColors } from './materials';
+import { recordQueuePush } from './push';
 
 async function loadAllowedMaterials() {
   let allowedMaterials: AllowedMaterial[] | undefined;
@@ -108,11 +109,15 @@ export async function upload(
     }
     if (verifiedEmail && verifiedEmail.toLowerCase() === updated.email.toLowerCase()) {
       const now = Date.now();
-      const [queuedJob] = await sql`UPDATE jobs
-        SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
-        WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
-        RETURNING *`;
-      invariant(queuedJob, 410, 'The submission expired. Please submit again.');
+      const queuedJob = await sql.begin(async tx => {
+        const [job] = await tx`UPDATE jobs
+          SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
+          WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+          RETURNING *`;
+        invariant(job, 410, 'The submission expired. Please submit again.');
+        await recordQueuePush(tx, [id], now);
+        return job;
+      });
       return {
         confirmed: true,
         job: queuedJob,
@@ -160,16 +165,20 @@ export async function finalizeBatch(
   try {
     if (verifiedEmail && jobs.every(j => j.email.toLowerCase() === verifiedEmail.toLowerCase())) {
       const now = Date.now();
-      const updatedJobs: Job[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        const id = ids[i];
-        const [queuedJob]: Job[] = await sql`UPDATE jobs
-          SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
-          WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
-          RETURNING *`;
-        invariant(queuedJob, 410, 'The batch upload expired. Please try again.');
-        updatedJobs.push(queuedJob);
-      }
+      const updatedJobs = await sql.begin(async tx => {
+        const updated: Job[] = [];
+        for (let i = 0; i < ids.length; i++) {
+          const id = ids[i];
+          const [queuedJob]: Job[] = await tx`UPDATE jobs
+            SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+            WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+            RETURNING *`;
+          invariant(queuedJob, 410, 'The batch upload expired. Please try again.');
+          updated.push(queuedJob);
+        }
+        await recordQueuePush(tx, updated.map(job => job.id), now);
+        return updated;
+      });
       return {
         confirmed: true,
         jobs: updatedJobs,
@@ -196,8 +205,8 @@ export async function finalizeBatch(
     logFailure('submission.failed', e, { jobId: ids[0] });
     try {
       for (const job of jobs) {
-        await sql`DELETE FROM jobs WHERE id = ${job.id} AND status = 'pending_confirmation'`;
-        await removeFile(job.storage_key);
+        const removed = await sql`DELETE FROM jobs WHERE id = ${job.id} AND status = 'pending_confirmation' RETURNING storage_key`;
+        for (const row of removed) await removeFile(row.storage_key);
       }
     } catch (cleanupError) {
       logError('submission.cleanup_failed', cleanupError, { jobId: ids[0] });
@@ -225,25 +234,28 @@ export async function confirmation(token: string, commit = false) {
     invariant(job.upload_state === 'ready', 409, 'This submission is not ready. Wait a moment and open the link again.');
   }
   if (commit) {
-    const run = async () => {
+    const run = () => sql.begin(async tx => {
       const now = Date.now();
       const updatedJobs: Job[] = [];
       let anyUpdated = false;
+      const newIds: string[] = [];
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i];
-        const rows = await sql`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+        const rows = await tx`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
           WHERE id = ${id} AND status = 'pending_confirmation' AND upload_state = 'ready' AND pending_expires_at > ${now} RETURNING *`;
         if (rows.length) {
           updatedJobs.push(rows[0] as Job);
           anyUpdated = true;
+          newIds.push(id);
         } else {
-          const [current]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
+          const [current]: Job[] = await tx`SELECT * FROM jobs WHERE id = ${id}`;
           invariant(current?.confirmed_at, 410, 'This confirmation expired. Please submit again.');
           updatedJobs.push(current);
         }
       }
+      await recordQueuePush(tx, newIds, now);
       return { job: updatedJobs[0], jobs: updatedJobs, already: !anyUpdated };
-    };
+    });
     const next = confirmChain.then(run, run);
     confirmChain = next.then(() => undefined, () => undefined);
     return next;
@@ -255,6 +267,19 @@ export async function publicQueue(): Promise<PublicJob[]> {
   return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version, batch_id, batch_title, group_name
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
+}
+
+export async function operatorQueue(status: string | null = null, pageInput: string | null = null) {
+  const filter = Object.hasOwn(transitions, status ?? '') ? status! : 'all';
+  const page = Math.min(1000000, Math.max(1, Number.parseInt(pageInput ?? '1') || 1));
+  const sql = await db();
+  return sql.begin(async tx => {
+    const jobs: Job[] = await tx`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL AND (${filter} = 'all' OR status = ${filter})
+      ORDER BY CASE status WHEN 'printing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+      CASE WHEN status IN ('queued','printing') THEN queued_at ELSE -created_at END, id LIMIT 51 OFFSET ${(page - 1) * 50}`;
+    const [revision] = await tx`SELECT COUNT(*) AS count, COALESCE(SUM(version), 0) AS version FROM jobs WHERE confirmed_at IS NOT NULL`;
+    return { jobs: jobs.slice(0, 50), hasNext: jobs.length > 50, filter, page, revision: `${revision.count}:${revision.version}` };
+  });
 }
 export async function updateStatus(id: string, next: Status, version: number, operator: number,
   { feedback: input = '', mailer = sendMail }: { feedback?: unknown; mailer?: Mailer } = {}) {

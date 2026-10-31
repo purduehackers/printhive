@@ -3,8 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import webPush from 'web-push';
 
-export async function startHarness() {
+export async function startHarness({ push = false }: { push?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'printhive-e2e-'));
   const messages: string[] = [], sockets = new Set<Socket>();
   let rejectMail = false;
@@ -33,9 +34,11 @@ export async function startHarness() {
   const port = (portServer.address() as { port: number }).port;
   await new Promise<void>(resolve => portServer.close(() => resolve()));
   const origin = `http://127.0.0.1:${port}`;
+  const pushKeys = push ? webPush.generateVAPIDKeys() : null;
   const env = { ...process.env, NODE_ENV: 'test', APP_ORIGIN: origin, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir,
     CONFIRMATION_SECRET: randomBytes(32).toString('hex'), SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), SMTP_SECURE: 'false',
-    SMTP_USERNAME: '', SMTP_PASSWORD: '', SMTP_FROM: 'PrintHive <test@example.test>', TRUST_PROXY: 'false' };
+    SMTP_USERNAME: '', SMTP_PASSWORD: '', SMTP_FROM: 'PrintHive <test@example.test>', TRUST_PROXY: 'false',
+    VAPID_PUBLIC_KEY: pushKeys?.publicKey ?? '', VAPID_PRIVATE_KEY: pushKeys?.privateKey ?? '', VAPID_SUBJECT: push ? 'mailto:operator@example.test' : '' };
   async function run(args: string[], input?: string) {
     const proc = Bun.spawn([process.execPath, ...args], { env, stdout: 'pipe', stderr: 'pipe', stdin: input === undefined ? 'ignore' : new Blob([input]) });
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);

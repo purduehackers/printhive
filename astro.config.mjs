@@ -15,7 +15,7 @@ export default defineConfig({
   // Middleware enforces runtime APP_ORIGIN, with a loopback-only development exception.
   security: { checkOrigin: false },
   vite: {
-    ssr: { external: ['bun', 'nodemailer'] },
+    ssr: { external: ['bun', 'nodemailer', 'web-push'] },
     // Workers load these entry points lazily. Discovering them after file selection
     // otherwise causes a dev-server reload that discards the selected File objects.
     optimizeDeps: { include: [

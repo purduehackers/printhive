@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { db } from './db';
 import { config } from './config';
 import { invariant } from './errors';
+import { revokeDevice } from './push';
 
 export const SESSION_COOKIE = 'printhive_session';
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -41,11 +42,13 @@ export async function login(context: APIContext, username: unknown, password: un
       WHERE id = ${operator.id} AND active = 1 AND password_hash = ${operator.password_hash}
       RETURNING token_hash`;
     invariant(session, 401, 'Credentials changed. Please sign in again.');
+    await revokeDevice(context, operator.id);
     context.cookies.set(SESSION_COOKIE, token, { httpOnly: true, secure: config().production,
       sameSite: 'strict', path: '/', expires: new Date(expires) });
   } finally { verifying--; }
 }
 export async function logout(context: APIContext) {
+  await revokeDevice(context);
   const token = context.cookies.get(SESSION_COOKIE)?.value;
   if (token) { const sql = await db(); await sql`DELETE FROM sessions WHERE token_hash = ${digest(token)}`; }
   context.cookies.delete(SESSION_COOKIE, { path: '/' });

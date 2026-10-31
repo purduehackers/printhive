@@ -13,6 +13,7 @@ await sql.begin(async tx => {
   const [operator] = await tx`INSERT INTO operators (username, password_hash) VALUES (${username}, ${hash})
     ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, active = 1 RETURNING id`;
   await tx`DELETE FROM sessions WHERE operator_id = ${operator.id}`;
+  await tx`DELETE FROM push_subscriptions WHERE operator_id = ${operator.id}`;
 });
 await sql.close();
 console.log(`Operator ${username} provisioned; previous sessions revoked.`);

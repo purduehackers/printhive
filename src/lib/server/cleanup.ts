@@ -15,11 +15,12 @@ export async function cleanup(now = Date.now()) {
     RETURNING storage_key`;
   for (const job of expired) await removeFile(job.storage_key);
   await sql`DELETE FROM sessions WHERE expires_at <= ${now}`;
+  await sql`DELETE FROM push_events WHERE expires_at <= ${now}`;
   const dir = join(config().dataDir, 'files');
   let orphans = 0;
   for (const name of await readdir(dir).catch((e) => { if (e.code === 'ENOENT') return []; throw e; })) {
-    if (!/^[a-f0-9-]{36}\.stl(?:\.part)?$/.test(name)) continue;
-    const path = join(dir, name), key = name.replace(/\.part$/, '');
+    if (!/^[a-f0-9-]{36}\.(?:stl(?:\.part)?|png)$/.test(name)) continue;
+    const path = join(dir, name), key = name.replace(/\.(?:stl(?:\.part)?|png)$/, '.stl');
     const info = await stat(path).catch(error => {
       if (error.code !== 'ENOENT') logWarning('cleanup.stat_failed', error, { storageKey: key });
       return null;

@@ -15,7 +15,7 @@ COPY vendor ./vendor
 RUN bun install --frozen-lockfile --production && mkdir /data
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
-COPY scripts/migrate.ts scripts/operator.ts scripts/cleanup.ts scripts/preflight.ts ./scripts/
+COPY scripts/migrate.ts scripts/operator.ts scripts/cleanup.ts scripts/preflight.ts scripts/push-keys.ts ./scripts/
 COPY src/lib ./src/lib
 EXPOSE 4321
 VOLUME /data

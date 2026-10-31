@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { invariant } from './errors';
 
-export type Purpose = 'upload' | 'confirm' | 'slicer-export';
+export type Purpose = 'upload' | 'confirm' | 'slicer-export' | 'thumbnail';
 export const VERIFIED_EMAIL_COOKIE = 'printhive_verified_email';
 export const VERIFIED_EMAIL_TTL = 30 * 24 * 60 * 60 * 1000;
 

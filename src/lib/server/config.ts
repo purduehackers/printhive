@@ -1,4 +1,22 @@
 import { resolve } from 'node:path';
+import { createECDH } from 'node:crypto';
+
+export function pushConfig() {
+  const publicKey = process.env.VAPID_PUBLIC_KEY ?? '';
+  const privateKey = process.env.VAPID_PRIVATE_KEY ?? '';
+  const subject = process.env.VAPID_SUBJECT ?? '';
+  if (!publicKey && !privateKey && !subject) return null;
+  try {
+    if (!/^[A-Za-z0-9_-]{87}$/.test(publicKey) || !/^[A-Za-z0-9_-]{43}$/.test(privateKey)) throw new Error();
+    const key = createECDH('prime256v1');
+    key.setPrivateKey(Buffer.from(privateKey, 'base64url'));
+    if (key.getPublicKey().toString('base64url') !== publicKey) throw new Error();
+    const contact = new URL(subject);
+    if (!(contact.protocol === 'mailto:' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact.pathname)) &&
+        !(contact.protocol === 'https:' && contact.hostname.includes('.') && !contact.username && !contact.password)) throw new Error();
+  } catch { throw new Error('Set matching VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY plus a valid VAPID_SUBJECT contact URI, or leave all three unset.'); }
+  return { publicKey, privateKey, subject };
+}
 
 function positive(name: string, fallback: number) {
   const value = Number(process.env[name] ?? fallback);

@@ -1,18 +1,15 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import OperatorQueue from '../../components/OperatorQueue';
+import OperatorNotifications from '../../components/OperatorNotifications';
 import { currentOperator } from '../../lib/server/auth';
-import { db } from '../../lib/server/db';
-import { STATUSES, effectiveGroupName, reference, type Job } from '../../lib/shared';
+import { operatorQueue } from '../../lib/server/jobs';
+import { STATUSES, effectiveGroupName, reference } from '../../lib/shared';
+import '../../styles/print-thumbnails.css';
 
 const operator = await currentOperator(Astro);
 if (!operator) return Astro.redirect('/operator/login');
-const sql = await db();
-const filter = STATUSES.find(s => s === Astro.url.searchParams.get('status')) ?? 'all';
-const page = Math.min(1000000, Math.max(1, Number.parseInt(Astro.url.searchParams.get('page') ?? '1') || 1));
-const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL AND (${filter} = 'all' OR status = ${filter})
-  ORDER BY CASE status WHEN 'printing' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
-  CASE WHEN status IN ('queued','printing') THEN queued_at ELSE -created_at END, id LIMIT 51 OFFSET ${(page - 1) * 50}`;
+const { jobs, filter, page, hasNext, revision } = await operatorQueue(Astro.url.searchParams.get('status'), Astro.url.searchParams.get('page'));
 ---
 <Layout title="Operator dashboard" active="operator">
   <div class="page-heading operator-heading">
@@ -41,11 +38,11 @@ const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL 
     ))}
   </nav>
 
-  <OperatorQueue initialJobs={jobs.slice(0, 50)} filter={filter} page={page} client:load />
+  <OperatorQueue initialJobs={jobs} filter={filter} page={page} revision={revision} client:load />
 
   <noscript>
     <div class="table-wrap">
-      <table>
+      <table class="operator-queue-table">
         <thead>
           <tr>
             <th>Print</th>
@@ -59,9 +56,16 @@ const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL 
           {jobs.slice(0, 50).map(job => (
             <tr>
               <td>
-                <a class="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
-                <span class="mono small muted">#{reference(job.id)}</span>
-                {effectiveGroupName(job) && <span class="group-badge">{effectiveGroupName(job)}</span>}
+                <div class="operator-print-summary">
+                  <span class="operator-print-artwork" aria-hidden="true">
+                    {Boolean(job.has_thumbnail) && <img class="operator-print-thumbnail" src={`/api/print-thumbnails/${job.id}`} width="36" height="36" alt="" loading="lazy" decoding="async" />}
+                  </span>
+                  <div class="operator-print-details">
+                    <a class="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
+                    <span class="mono small muted">#{reference(job.id)}</span>
+                    {effectiveGroupName(job) && <span class="group-badge">{effectiveGroupName(job)}</span>}
+                  </div>
+                </div>
               </td>
               <td>{job.email}</td>
               <td>
@@ -81,6 +85,8 @@ const jobs: Job[] = await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL 
   <div class="pagination">
     {page > 1 && <a href={`/operator?status=${filter}&page=${page - 1}`}>← Previous</a>}
     <span>Page {page}</span>
-    {jobs.length > 50 && <a href={`/operator?status=${filter}&page=${page + 1}`}>Next →</a>}
+    {hasNext && <a href={`/operator?status=${filter}&page=${page + 1}`}>Next →</a>}
   </div>
+
+  <OperatorNotifications client:load />
 </Layout>

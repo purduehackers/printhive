@@ -8,6 +8,7 @@ import {
 } from '../lib/shared';
 import { IDENTITY_ROTATION } from '@time-estimator/browser-preview/pose';
 import { prepareOrientedFile } from '../lib/oriented-file';
+import { preparePrintThumbnails, uploadPrintThumbnail } from '../lib/print-thumbnails';
 const DEFAULT_ROTATION = [...IDENTITY_ROTATION];
 import PartSettingsFields from './PartSettingsFields';
 import {
@@ -406,6 +407,10 @@ export default function SubmissionForm({
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
+      const thumbnails = preparePrintThumbnails(files.map((file, index) => ({
+        file, rotation: orientations.get(file) ?? [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        mirror: settings[index].mirror, scale: partScale(settings[index])!, color: settings[index].color,
+      })), controller.signal);
       setPreparing(true);
       const uploadFiles: File[] = [];
       for (const [index, file] of files.entries())
@@ -452,6 +457,7 @@ export default function SubmissionForm({
         const reservation = await response.json();
         if (!response.ok) throw new Error(reservation.error);
         if (controller.signal.aborted) throw new Error('Upload canceled.');
+        await uploadPrintThumbnail(reservation.id, reservation.capability, thumbnails[0], controller.signal);
         const uploadRes = await uploadFile(
           reservation.id,
           reservation.capability,
@@ -499,6 +505,7 @@ export default function SubmissionForm({
           if (controller.signal.aborted) throw new Error('Upload canceled.');
           const itemRes = reservation.items[i];
           const targetFile = uploadFiles[i];
+          await uploadPrintThumbnail(itemRes.id, itemRes.capability, thumbnails[i], controller.signal);
           await uploadFile(
             itemRes.id,
             itemRes.capability,
@@ -533,6 +540,7 @@ export default function SubmissionForm({
         e instanceof Error ? e.message : 'Submission failed. Please try again.',
       );
     } finally {
+      controller.abort();
       setPreparing(false);
       setBusy(false);
       xhrRef.current = null;

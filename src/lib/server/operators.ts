@@ -1,5 +1,4 @@
-import type { SQL } from 'bun';
-import { db } from './db';
+import { db, type DatabaseQueries } from './db';
 import { invariant } from './errors';
 import type { Operator } from './auth';
 
@@ -25,7 +24,7 @@ async function hashPassword(password: string) {
   try { return await Bun.password.hash(password, { algorithm: 'argon2id', memoryCost: 65536, timeCost: 3 }); }
   finally { hashing--; }
 }
-async function checkActor(sql: SQL, actorId: number) {
+async function checkActor(sql: DatabaseQueries, actorId: number) {
   const [actor] = await sql`SELECT id FROM operators WHERE id = ${actorId} AND active = 1`;
   invariant(actor, 401, 'Please log in as an operator.');
 }
@@ -40,6 +39,7 @@ export async function addOperator(actorId: number, input: unknown): Promise<Oper
       WHERE operators.active = 0 RETURNING id, username`;
     invariant(operator, 409, 'That username is already in use.');
     await tx`DELETE FROM sessions WHERE operator_id = ${operator.id}`;
+    await tx`DELETE FROM push_subscriptions WHERE operator_id = ${operator.id}`;
     return operator;
   });
 }
@@ -54,7 +54,10 @@ export async function editOperator(actorId: number, id: number, input: unknown):
       WHERE id = ${id} AND NOT EXISTS (SELECT 1 FROM operators WHERE username = ${data.username} AND id != ${id})
       RETURNING id, username`;
     invariant(operator, 409, 'That username is already in use.');
-    if (hash !== null) await tx`DELETE FROM sessions WHERE operator_id = ${id}`;
+    if (hash !== null) {
+      await tx`DELETE FROM sessions WHERE operator_id = ${id}`;
+      await tx`DELETE FROM push_subscriptions WHERE operator_id = ${id}`;
+    }
     return operator;
   });
 }
@@ -70,5 +73,6 @@ export async function removeOperator(actorId: number, id: number) {
       AND (SELECT COUNT(*) FROM operators WHERE active = 1) > 1 RETURNING id`;
     invariant(removed, 409, 'The last active operator cannot be removed.');
     await tx`DELETE FROM sessions WHERE operator_id = ${id}`;
+    await tx`DELETE FROM push_subscriptions WHERE operator_id = ${id}`;
   });
 }

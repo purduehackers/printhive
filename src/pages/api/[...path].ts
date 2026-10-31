@@ -8,13 +8,34 @@ import { invariant } from '../../lib/server/errors';
 import { reference } from '../../lib/shared';
 import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
 import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial, setDefaultColor, setDefaultMaterial } from '../../lib/server/materials';
-import { VERIFIED_EMAIL_COOKIE, getVerifiedEmail } from '../../lib/server/tokens';
+import { VERIFIED_EMAIL_COOKIE, getVerifiedEmail, unseal } from '../../lib/server/tokens';
+import { storeThumbnail, readThumbnail } from '../../lib/server/thumbnails';
 import { createSlicerProject, downloadSlicerProject } from '../../lib/server/slicer-export';
+import { operatorQueue } from '../../lib/server/jobs';
+import { pushStatus, subscribeDevice, revokeDevice, testDevice } from '../../lib/server/push';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
   try {
     if (path === 'queue' && method === 'GET') return json(await publicQueue());
+    if (path === 'operator/queue' && method === 'GET') {
+      await requireOperator(context);
+      const query = new URL(request.url).searchParams;
+      return json(await operatorQueue(query.get('status'), query.get('page')));
+    }
+    if (path === 'push' && ['GET', 'POST', 'DELETE'].includes(method)) {
+      const operator = await requireOperator(context);
+      if (method === 'GET') return json(await pushStatus(context, operator.id));
+      rateLimit('push:' + operator.id, 30, 900000);
+      if (method === 'POST') return json(await subscribeDevice(context, operator.id, await smallBody(request)), 201);
+      await revokeDevice(context);
+      return json({ enabled: false });
+    }
+    if (path === 'push/test' && method === 'POST') {
+      const operator = await requireOperator(context);
+      rateLimit('push-test:' + operator.id, 5, 900000);
+      return json(await testDevice(context, operator.id));
+    }
     if (path === 'health' && method === 'GET') {
       const sql = await db(); await sql`SELECT id FROM jobs LIMIT 1`;
       return json({ ok: true });
@@ -47,6 +68,19 @@ export const ALL: APIRoute = async (context) => {
       return json(await finalizeBatch(token, undefined, { verifiedEmail: getVerifiedEmail(context) }));
     }
     const uploadMatch = /^submissions\/([a-f0-9-]{36})\/file$/.exec(path);
+    const thumbnailUpload = /^submissions\/([a-f0-9-]{36})\/thumbnail$/.exec(path);
+    if (thumbnailUpload && method === 'PUT') {
+      const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
+      await storeThumbnail(thumbnailUpload[1], token, request);
+      return json({ ok: true });
+    }
+    const thumbnailRead = /^print-thumbnails\/([a-f0-9-]{36})$/.exec(path);
+    if (thumbnailRead && method === 'GET') {
+      const token = new URL(request.url).searchParams.get('token');
+      if (token) invariant(unseal(token, 'thumbnail').id === thumbnailRead[1], 403, 'This thumbnail belongs to another print.');
+      else await requireOperator(context);
+      return await readThumbnail(thumbnailRead[1]);
+    }
     if (uploadMatch && method === 'PUT') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       const deferEmail = new URL(request.url).searchParams.get('batch') === '1';

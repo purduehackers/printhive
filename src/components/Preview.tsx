@@ -14,6 +14,7 @@ import {
 } from "@time-estimator/browser-preview/three";
 import "../styles/support-preview.css";
 import { previewColor } from "../lib/shared";
+import { rememberThumbnailMesh } from "../lib/thumbnail-mesh";
 import {
   PreviewResultCache,
   previewCacheKey,
@@ -440,7 +441,11 @@ export default function Preview({
     worker.onmessage = ({ data }) => {
       setReading(false);
       if (data.error) setMessage("Couldn't open this preview.");
-      else setModel({ ...data, file, rotation, mirror, scale });
+      else {
+        const model = { ...data, file, rotation, mirror, scale };
+        rememberThumbnailMesh(file, model);
+        setModel(model);
+      }
       worker.terminate();
     };
     worker.onerror = () => {

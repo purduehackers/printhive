@@ -1,0 +1,25 @@
+.operator-queue-table td { vertical-align: middle; padding: 12px 16px; }
+.operator-queue-table .selection-cell input { display: block; margin: 0 auto; }
+.operator-print-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 170px;
+}
+.operator-print-artwork {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+.operator-print-details { min-width: 0; }
+.operator-print-details .mono { margin-top: 3px; }
+.operator-print-details .group-badge { margin-left: 0; margin-top: 3px; }
+.operator-print-thumbnail {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  /* White blends into normal, selected and grouped rows; notifications keep the original PNG. */
+  mix-blend-mode: multiply;
+}
+.operator-print-thumbnail[hidden] { display: none; }

@@ -15,13 +15,14 @@ interface OperatorQueueProps {
   initialJobs: Job[];
   filter?: string;
   page?: number;
+  revision?: string;
 }
 
 type GroupByOption = 'none' | 'custom' | 'batch' | 'material-color' | 'status' | 'submitter';
 
 const STORAGE_KEY = 'printhive_operator_custom_groups';
 
-export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
+export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, revision = '' }: OperatorQueueProps) {
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<GroupByOption>('none');
@@ -33,6 +34,37 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing || document.visibilityState === 'hidden') return;
+      refreshing = true;
+      try {
+        const query = new URLSearchParams({ status: filter, page: String(page) });
+        const response = await fetch(`/api/operator/queue?${query}`, { signal: controller.signal });
+        if (response.status === 401) { setSessionExpired(true); return; }
+        if (!response.ok) return;
+        const result = await response.json();
+        if (result.revision !== revision || JSON.stringify(result.jobs) !== JSON.stringify(initialJobs)) setUpdateAvailable(true);
+      } catch { /* Keep the existing queue usable through temporary connection failures. */ }
+      finally { refreshing = false; }
+    };
+    const onMessage = (event: MessageEvent) => { if (event.data?.type === 'printhive:queue-updated') void refresh(); };
+    const interval = setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => {
+      controller.abort(); clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      navigator.serviceWorker?.removeEventListener('message', onMessage);
+    };
+  }, [filter, page, revision, initialJobs]);
 
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
@@ -442,6 +474,12 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
 
   return (
     <div>
+      {sessionExpired ? <div className="queue-update-banner" role="status">Your session expired. <a href="/operator/login">Sign in again</a></div> : updateAvailable && (
+        <div className="queue-update-banner" role="status">
+          <span>New or updated prints available.</span>
+          <button className="button secondary" disabled={busy} onClick={() => window.location.reload()}>Refresh queue</button>
+        </div>
+      )}
       {/* Notice display */}
       {notice && (
         <div className={`notice ${notice.type === 'error' || notice.type === 'warning' ? 'error' : ''}`} role="status">
@@ -623,7 +661,7 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
 
       {/* Table */}
       <div className="table-wrap">
-        <table>
+        <table className="operator-queue-table">
           <thead>
             <tr>
               <th className="selection-cell">
@@ -722,20 +760,27 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
                         />
                       </td>
                       <td>
-                        <a className="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
-                        <span className="mono small muted">#{reference(job.id)}</span>
-                        {jobGroupName && (
-                          <button
-                            type="button"
-                            className="group-badge group-badge-button"
-                            onClick={() => selectGroup(groupMemberIds)}
-                            aria-label={`Select group ${jobGroupName}`}
-                            title={`Click to select all ${groupMemberIds.length} print(s) in "${jobGroupName}"`}
-                          >
-                            {jobGroupName}
-                            {groupMemberIds.length > 1 ? ` (${groupMemberIds.length})` : ''}
-                          </button>
-                        )}
+                        <div className="operator-print-summary">
+                          <span className="operator-print-artwork" aria-hidden="true">
+                            {Boolean(job.has_thumbnail) && <img className="operator-print-thumbnail" src={`/api/print-thumbnails/${job.id}`} width={36} height={36} alt="" loading="lazy" decoding="async" onError={event => { event.currentTarget.hidden = true; }} />}
+                          </span>
+                          <div className="operator-print-details">
+                            <a className="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
+                            <span className="mono small muted">#{reference(job.id)}</span>
+                            {jobGroupName && (
+                              <button
+                                type="button"
+                                className="group-badge group-badge-button"
+                                onClick={() => selectGroup(groupMemberIds)}
+                                aria-label={`Select group ${jobGroupName}`}
+                                title={`Click to select all ${groupMemberIds.length} print(s) in "${jobGroupName}"`}
+                              >
+                                {jobGroupName}
+                                {groupMemberIds.length > 1 ? ` (${groupMemberIds.length})` : ''}
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td>{job.email}</td>
                       <td>

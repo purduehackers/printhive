@@ -4,7 +4,7 @@ An Astro + React 3D printing queue running on Bun. SQLite is accessed through `B
 
 ## Local development
 
-Requires Bun 1.4.3 or newer. All project commands use Bun; the container pins Bun 1.4.3.
+Requires Bun 1.4.2 or newer. All project commands use Bun; the container pins Bun 1.4.3 for the verified production SMTP setup. Database access serializes queries and complete transactions on the single SQLite connection, so concurrent queue updates and background notification delivery also work on Bun 1.4.2/1.4.3.
 
 React and ReactDOM are pinned to 19.2.7. The test suite includes a production-rendering regression check; run it before upgrading that pair.
 
@@ -44,7 +44,33 @@ Signed-in operators can use **Manage operators** on `/operator` to open `/operat
 - Operators can choose **Reject and return with feedback** for queued or printing jobs. Feedback is required (up to 5,000 characters), saved privately in status history, and sent through the status email system with a link to submit a revised print. Rejection removes the job from the active queue while retaining its file and history. Email failure preserves the rejection and feedback and shows the existing delivery warning. Migration `002_rejected_feedback.sql` adds the rejected status and event feedback while preserving existing jobs and history.
 - Preview parsing runs in a worker, reads bounded slices, and samples at most 1,000,000 triangles. Preview cancellation terminates the worker. Three.js resources are released when files change. Orientation and X mirroring are saved into a new STL before submission; each batch file retains its own orientation. Units are assumed to be millimeters. Optional generated support inspection uses a separately packaged browser library and a checksum-pinned Orca WebAssembly engine. The full STL uses Orca's C++ import/repair path in a separate browser worker; display sampling is never slicing input. Each printer has an editable JSON configuration under `public/preview-profiles/`; the selected printer is shown beside its estimate. See [printer settings](docs/preview-settings.md). Tree scenarios do not change an “Operator decides” submission. Support generation has its own size/time budgets and cancellation; submission still works when the preview or engine is unavailable. The server time_estimator library is not a browser dependency.
 
+## Operator notifications and Android installation
+
+Operators can enable desktop and Android Chrome push alerts under **Print alerts** at the bottom of `/operator`. Each browser/device opts in separately. A confirmed submission sends an alert showing its submission name, file count and submitter email; a batch sends one alert for all its files. Copies do not increase the file count. Migration `009_push_submission_details.sql` preserves these details for retries and backfills existing outbox entries. Pending uploads, confirmation-link previews, requeues and other status changes do not send new-print alerts. Click an alert to open the authenticated operator queue. The dashboard also checks for changes every 15 seconds and offers **Refresh queue**, preserving selections until the operator refreshes.
+
+**Server setup (administrator):** Before operators can enable notifications, generate a VAPID key pair once with `bun run push:keys` (or `podman exec printhive bun run push:keys` for an existing container). Add the generated values and a real administrator contact to the server's runtime environment:
+
+```dotenv
+VAPID_PUBLIC_KEY=GENERATED_PUBLIC_KEY
+VAPID_PRIVATE_KEY=GENERATED_PRIVATE_KEY
+VAPID_SUBJECT=mailto:operator@example.org
+```
+
+Apply the updated environment by restarting the Quadlet service (`systemctl --user restart printhive.service`) or recreating a manually managed container with its updated environment file and existing data volume. `podman restart` alone does not reload an `--env-file`. Serve the app over HTTPS and allow outbound HTTPS to browser push services. Operators can then enable notifications and use **Send test** on each device.
+
+Leave all three values unset to disable push; incomplete or mismatched configuration fails startup validation. Retain the keys across deployments, keep the private key secret, and do not commit them. Rotating the keys requires devices to enable notifications again. No Firebase project is needed.
+
+On Android, open the HTTPS site in Chrome and use its menu to install PrintHive (depending on Chrome, **Install and create shortcut → Install** or **Add to home screen → Install**). Launch it from its icon, sign in and choose **Enable notifications**. Installation does not grant notification permission. Use **Send test** to check the device; both browser/site and Android notification settings must permit alerts. Push can work while the Android app is closed; desktop delivery requires the browser to be running, possibly in the background. Delivery/presentation can be delayed or suppressed by connectivity, power settings or Do Not Disturb. The queue is authoritative.
+
+Subscriptions survive the 12-hour web session so personal devices can receive background alerts. Signing out revokes that browser's subscription; password resets (including the provisioning CLI), account removal and account reactivation revoke all affected subscriptions. A different operator signing in on the same browser revokes its previous operator's device subscription. Private pages still require a valid login. No authenticated pages, models or preview engine assets are cached for offline use.
+
+Migration `008_operator_push.sql` adds device subscriptions and a durable outbox. Queue transitions and recipients are committed together. The web process starts its dispatcher on its first request (including `/api/health`), processes up to four deliveries at a time, retries temporary failures, removes expired subscriptions and expires alerts after one hour. Restarted processes recover pending deliveries after their 30-second leases expire. A push-service acceptance is not proof the device displayed an alert, and interrupted deliveries can be repeated. Stable notification tags reduce duplicate alerts. Logs record sanitized `push.delivery_failed` / `push.dispatch_failed` events without subscription endpoints or keys. The regular cleanup command also removes expired outbox events.
+
 ## Verification
+
+The push-only service worker activates updates immediately, including while app windows remain open; it never reloads or caches operator pages. **Send test** includes the latest confirmed print thumbnail when available. Windows receives the same small file as a notification picture as well as its icon; the OS controls the final layout. Android installations created before the white theme change can retain the old native navigation-bar color until Chrome updates their installed wrapper. For local testing, Chrome's `about://webapks` page provides **Update PrintHive Operators**; close and reopen PrintHive to trigger the update check.
+
+New submissions include 128 × 128 PNG model thumbnails, displayed at 36 pixels on the operator dashboard and used as notification icons when the browser supports them. Dashboard backgrounds blend into each row; notifications retain the same image's white background. Near-white filament is shaded light gray for legibility. The browser renders a fixed, fitted isometric view without a bed or supports, reusing preview geometry when available. A batch alert uses its first available thumbnail. Images are limited to 64 KiB; the server stores and serves them without rendering or slicing. Optional preparation runs alongside submission work with a 750 ms worker limit; the upload path waits at most 150 ms for an image and 500 ms for its upload before continuing without one. Existing submissions keep their text-only appearance. Thumbnails require operator login or a purpose-specific encrypted notification link that expires after 24 hours; public queue responses never include them. Cleanup removes thumbnails with abandoned submissions. After building, `bun run test:thumbnails` checks browser generation, dimensions, framing, privacy and mobile layout.
 
 ```sh
 bun run check
@@ -52,9 +78,12 @@ bun test tests
 bun run build
 bun run test:e2e
 bun run test:browser
+bun run test:notifications
 ```
 
-`test:e2e` runs the built standalone server against an isolated SQLite directory and a local SMTP sink, testing real HTTP streaming, mail failure, privacy, authentication, download integrity, confirmation, and persistence across restarts. `test:browser` also exercises the actual UI, worker preview, and mobile layout with Playwright. Install its browser once with `bun --bun playwright install chromium`. These tests never use your configured SMTP account or database. The optional `LARGE_UPLOAD_TEST=1 bun run test:e2e` adds a near-500-MiB streamed upload. Test screenshots go to ignored `test-results/`.
+`test:e2e` runs the built standalone server against an isolated SQLite directory and a local SMTP sink, testing real HTTP streaming, mail failure, privacy, authentication, download integrity, confirmation, and persistence across restarts. `test:browser` also exercises the actual UI, worker preview, and mobile layout with Playwright. `test:notifications` exercises real service worker registration and notification HTTP endpoints with simulated browser permission/push enrollment; actual background delivery needs a real-device test. Install the browser once with `bun --bun playwright install chromium`. These tests never use your configured SMTP account, push keys or database. The optional `LARGE_UPLOAD_TEST=1 bun run test:e2e` adds a near-500-MiB streamed upload. Test screenshots go to ignored `test-results/`.
+
+After building, `bun run test:push-live` uses installed Google Chrome in a temporary profile and contacts its real push provider. It grants notification permission only in that test profile, sends real encrypted pushes, verifies notifications through the browser, closes all PrintHive tabs, confirms a test print and a two-print batch, and checks confirmation replay. It uses temporary keys, an isolated database and a local SMTP inbox; it does not use existing browser profiles or send real email. It unsubscribes and removes its temporary profile afterward. Internet access and a desktop session are required. Results and failure diagnostics go to ignored `test-results/push-live-chrome.json`. To test installed Microsoft Edge instead, set `PUSH_BROWSER_CHANNEL=msedge`; its report uses `push-live-msedge.json`. Push-provider or browser registration failures make this test fail even when deterministic tests pass. This desktop check does not verify physical Android background delivery or whether the OS shows a banner while Do Not Disturb is enabled.
 
 ## Production with Podman
 
@@ -92,7 +121,7 @@ Logs omit request bodies, email content, submission titles/notes, SQL bindings, 
 
 `DATA_DIR` contains `printhive.sqlite` plus SQLite WAL/SHM sidecars and `files/<uuid>.stl`. Upload temporaries use `.stl.part`. Defaults: two concurrent uploads, 30-minute upload capabilities, and three unconfirmed submissions per email. Total storage limits are managed through filesystem quotas on the host. The application enforces the 500 MiB per-file size limit. Confirmed files and history are retained indefinitely.
 
-Run cleanup every 15 minutes. It atomically removes expired unconfirmed jobs, deletes their files and expired sessions, and removes unreferenced files older than two hours. Active reservations/finalization check database deadlines, so cleanup cannot enqueue missing files. Crashed uploads are collected after their upload deadline; expired confirmed jobs are never deleted. No scheduled process runs inside the web server.
+Run cleanup every 15 minutes. It atomically removes expired unconfirmed jobs, deletes their files and expired sessions, and removes unreferenced files older than two hours. Active reservations/finalization check database deadlines, so cleanup cannot enqueue missing files. Crashed uploads are collected after their upload deadline; expired confirmed jobs are never deleted. Cleanup runs externally; the web process only schedules push delivery.
 
 Migrations are ordered SQL files in `migrations/`, tracked in `schema_migrations`. Run `bun run db:migrate` before direct maintenance commands; dev/start do this automatically. Apply schema changes through new numbered migration files. Do not edit an already applied migration.
 

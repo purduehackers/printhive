@@ -10,25 +10,30 @@
     "start": "bun scripts/preflight.ts && bun run db:migrate && bun dist/server/entry.mjs",
     "test": "bun test tests",
     "test:e2e": "bun scripts/e2e.ts",
+    "test:notifications": "bun scripts/notifications-browser-test.ts",
+    "test:thumbnails": "bun scripts/thumbnails-browser-test.ts",
+    "test:push-live": "bun scripts/notifications-live-test.ts",
     "test:browser": "bun scripts/browser-test.ts && bun scripts/settings-browser-test.ts && bun scripts/profile-browser-test.ts && bun scripts/support-angle-browser-test.ts && bun scripts/slicer-browser-test.ts",
     "test:slicer-native": "bun scripts/slicer-native-test.ts",
     "db:migrate": "bun scripts/migrate.ts",
     "operator:add": "bun scripts/operator.ts",
     "cleanup": "bun scripts/cleanup.ts",
+    "push:keys": "bun scripts/push-keys.ts",
     "preview:runtime": "bun node_modules/@time-estimator/browser-preview/scripts/fetch-runtime.mjs public/preview-engine --replace"
   },
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.2"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.9",
     "@astrojs/react": "^7.1.0",
+    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.5.0.0c616838ed2f.tgz",
     "astro": "^7.4.1",
     "nodemailer": "^10.1.7",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "three": "^0.186.1",
-    "@time-estimator/browser-preview": "file:vendor/time-estimator-browser-preview-0.5.0.0c616838ed2f.tgz"
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.11",
@@ -38,6 +43,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
+    "@types/web-push": "^3.6.4",
     "typescript": "5.9.3"
   }
 }

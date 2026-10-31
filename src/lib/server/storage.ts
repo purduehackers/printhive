@@ -11,9 +11,9 @@ export function filePath(key: string, temporary = false) {
   return join(config().dataDir, 'files', key + (temporary ? '.part' : ''));
 }
 export async function removeFile(key: string) {
-  for (const temp of [false, true]) await unlink(filePath(key, temp)).catch((error) => {
+  for (const path of [filePath(key), filePath(key, true), filePath(key).replace(/\.stl$/, '.png')]) await unlink(path).catch((error) => {
     if (error.code !== 'ENOENT') {
-      logError('storage.delete_failed', error, { storageKey: key, temporary: temp });
+      logError('storage.delete_failed', error, { storageKey: key });
       throw error;
     }
   });

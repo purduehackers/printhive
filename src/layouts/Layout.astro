@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import '../styles/installed-app.css';
 interface Props { title?: string; active?: string }
 const { title = 'Print queue', active = '' } = Astro.props;
 ---
@@ -7,11 +8,13 @@ const { title = 'Print queue', active = '' } = Astro.props;
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content="Submit STL files and manage the Purdue PrintHive 3D printing queue." />
     <meta name="color-scheme" content="light" />
     <title>{title} · PrintHive</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f7f7ef" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -21,4 +24,10 @@ const { title = 'Print queue', active = '' } = Astro.props;
     </header>
     <main id="main"><slot /></main>
   </body>
+  <script>
+    // Existing installs check for the push-only worker update even on the login page.
+    if ('serviceWorker' in navigator) {
+      void navigator.serviceWorker.getRegistration('/').then(registration => registration?.update()).catch(() => {});
+    }
+  </script>
 </html>

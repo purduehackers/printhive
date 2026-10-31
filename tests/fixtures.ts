@@ -1,3 +1,23 @@
+import { deflateSync } from 'node:zlib';
+
+export function thumbnailPNG() {
+  function chunk(type: string, data: Buffer) {
+    const result = Buffer.alloc(data.length + 12);
+    result.writeUInt32BE(data.length); result.write(type, 4); data.copy(result, 8);
+    let crc = 0xffffffff;
+    for (const byte of result.subarray(4, -4)) {
+      crc ^= byte;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4);
+    return result;
+  }
+  const header = Buffer.alloc(13); header.writeUInt32BE(128); header.writeUInt32BE(128, 4); header[8] = 8; header[9] = 2;
+  const pixels = Buffer.alloc(128 * (1 + 128 * 3), 190);
+  for (let y = 0; y < 128; y++) pixels[y * (1 + 128 * 3)] = 0;
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', header), chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+}
+
 export const asciiSTL = `solid test
 facet normal 0 0 1
 outer loop
