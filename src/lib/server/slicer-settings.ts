@@ -9,10 +9,14 @@ export const EXPORT_SETTING_SCOPE = {
 
 export function objectSettings(settings: PrintSettings, supports: SupportChoice, slicer: Slicer): Record<string, string> {
   const prusa = slicer === 'prusa';
-  return {
+  const overrides = {
     [prusa ? 'fill_density' : 'sparse_infill_density']: `${settings.infill}%`,
     [prusa ? 'perimeters' : 'wall_loops']: String(settings.walls),
     layer_height: String(settings.layer_height),
+  };
+  if (supports === 'operator') return overrides;
+  return {
+    ...overrides,
     [prusa ? 'support_material' : 'enable_support']: supports === 'none' ? '0' : '1',
     ...(prusa ? {
       support_material_auto: '1',

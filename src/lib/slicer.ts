@@ -4,7 +4,7 @@ export const SLICERS = [
   { id: 'prusa', name: 'PrusaSlicer', scheme: 'prusaslicer' },
 ] as const;
 export type Slicer = typeof SLICERS[number]['id'];
-export type SupportChoice = 'none' | 'normal' | 'tree';
+export type SupportChoice = 'operator' | 'none' | 'normal' | 'tree';
 export const MAX_EXPORT_JOBS = 10;
 export const EXPORT_TTL = 15 * 60 * 1000;
 

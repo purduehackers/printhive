@@ -10,6 +10,7 @@ import { projectEntries } from '../tests/project-archive';
 import { writeProjectZip } from '../src/lib/server/project-zip';
 import localProfiles from '../tests/slicer-profiles/desktop.json';
 import { submission } from '../tests/fixtures';
+import { reference } from '../src/lib/shared';
 import type { Slicer } from '../src/lib/slicer';
 
 const targets = [
@@ -31,9 +32,10 @@ async function run(executable: string, args: string[], name: string) {
 try {
   await mkdir(outputs, { recursive: true }); await mkdir(join(dir, 'files'), { recursive: true }); await migrate();
   const source = await readFile('tests/support-bracket.stl');
-  const ids = [];
+  const ids: string[] = [];
   for (const [index, overrides] of [{ infill: 50, layer_height: 0.12, supports: 'tree', support_angle: 0, copies: 2 },
-    { infill: 20, layer_height: 0.28, supports: 'normal', support_angle: 80 }].entries()) {
+    { infill: 20, layer_height: 0.28, supports: 'normal', support_angle: 80 },
+    { supports: 'operator', support_angle: 45 }].entries()) {
     const item = await reserve(submission({ title: `Native sample ${index}`, file_size: source.length, ...overrides }));
     await Bun.write(filePath(`${item.id}.stl`), source);
     const sql = await db(); await sql`UPDATE jobs SET confirmed_at = ${Date.now()}, upload_state = 'ready', status = 'queued' WHERE id = ${item.id}`;
@@ -54,6 +56,10 @@ try {
     let localArgs: string[] = [];
     if (target.slicer === 'prusa') {
       const ini = String(baseline).replace(/^first_layer_height\s*=.*$/m, 'first_layer_height = 0.24')
+        .replace(/^support_material\s*=.*$/m, 'support_material = 1')
+        .replace(/^support_material_auto\s*=.*$/m, 'support_material_auto = 1')
+        .replace(/^support_material_style\s*=.*$/m, 'support_material_style = snug')
+        .replace(/^support_material_threshold\s*=.*$/m, 'support_material_threshold = 37')
         .replace(/^temperature\s*=.*$/m, 'temperature = 217').replace(/^binary_gcode\s*=.*$/m, 'binary_gcode = 0')
         .replace(/^start_gcode\s*=\s*/m, 'start_gcode = ; LOCAL_PRINTER_SENTINEL\\n');
       const path = join(outputs, `${name}-local.ini`); await Bun.write(path, ini);
@@ -64,7 +70,7 @@ try {
       // presets with object overrides. This file is never served by PrintHive.
       const config = { ...(baseline as Record<string, unknown>), initial_layer_print_height: '0.24', nozzle_temperature: ['217'],
         filament_colour: ['#123456'], machine_start_gcode: '; LOCAL_PRINTER_SENTINEL\n' + (baseline as Record<string, unknown>).machine_start_gcode,
-        enable_prime_tower: '0' };
+        enable_prime_tower: '0', enable_support: '1', support_type: 'normal(auto)', support_style: 'snug', support_threshold_angle: '37' };
       input = join(outputs, `${name}-local.3mf`);
       await writeProjectZip(input, [...publicEntries].map(([name, content]) => ({ name, content })).concat([
         { name: 'Metadata/project_settings.config', content: JSON.stringify(config) },
@@ -82,19 +88,27 @@ try {
     const angleKey = target.slicer === 'prusa' ? 'support_material_threshold' : 'support_threshold_angle';
     assert.match(settings, new RegExp(`key="${angleKey}" value="0"`));
     assert.match(settings, new RegExp(`key="${angleKey}" value="80"`));
-    assert.equal((settings.match(/<object /g) ?? []).length, 2, 'Native import merged distinct objects');
+    assert.equal((settings.match(/<object /g) ?? []).length, 3, 'Native import merged distinct objects');
+    const inherited = [...settings.matchAll(/<object\b[^>]*>[\s\S]*?<\/object>/g)]
+      .map(match => match[0]).find(object => object.includes(`value="Print ${reference(ids[2])}"`));
+    assert(inherited, 'Native import lost the object inheriting process supports');
+    assert.doesNotMatch(inherited, /key="(?:enable_support|support_[^"]*)"/, 'Undecided supports override the local process');
     const geometry = [...entries].filter(([path]) => path.endsWith('.model')).map(([,value]) => value).join('');
     assert.match(geometry, /<vertex /); assert.match(geometry, /<triangle /);
-    assert.equal((geometry.match(/<item /g) ?? []).length, 3, 'Native import lost a copy');
+    assert.equal((geometry.match(/<item /g) ?? []).length, 4, 'Native import lost a copy');
     if (target.slicer === 'prusa') {
       // Prusa's CLI does not embed --load settings in an exported model-only 3MF.
       const config = await readFile(join(outputs, `${name}-resolved.ini`), 'utf8');
       assert.match(config, /first_layer_height = 0.24/); assert.match(config, /temperature = 217/);
       assert(config.includes('LOCAL_PRINTER_SENTINEL'));
+      assert.match(config, /^support_material = 1$/m); assert.match(config, /^support_material_style = snug$/m);
+      assert.match(config, /^support_material_threshold = 37$/m);
     } else {
       const config = JSON.parse(entries.get('Metadata/project_settings.config')!);
       assert.equal(config.initial_layer_print_height, '0.24'); assert.equal(config.nozzle_temperature[0], '217');
       assert.equal(config.filament_colour[0], '#123456'); assert(config.machine_start_gcode.includes('LOCAL_PRINTER_SENTINEL'));
+      assert.equal(config.enable_support, '1'); assert.equal(config.support_type, 'normal(auto)');
+      assert.equal(config.support_style, 'snug'); assert.equal(config.support_threshold_angle, '37');
       if (target.printer === 'h2d') assert.equal(config.printer_model, 'Bambu Lab H2D Pro');
     }
     console.log(`${name}: native round-trip retained geometry, distinct object settings and supports.`);
@@ -113,7 +127,7 @@ try {
       const bambuLabels = [...firstLayer.matchAll(/^; start printing object, unique label id: (\d+)/gm)].map(match => match[1]);
       const objects = bambuLabels.length ? bambuLabels :
         [...firstLayer.matchAll(/^; printing object (.+) id:(\d+) copy (\d+)/gm)].map(match => `${match[1]}:${match[2]}:${match[3]}`);
-      assert.equal(new Set(objects).size, 3, 'A model copy is missing from the first layer');
+      assert.equal(new Set(objects).size, 4, 'A model copy is missing from the first layer');
     }
     console.log(`${name}: native slicing completed with actual first-layer extrusion.`);
   }

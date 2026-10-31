@@ -150,15 +150,20 @@ describe('native slicer project export', () => {
       }
     }
   });
-  test('undecided supports export as none without rewriting saved settings', async () => {
-    const id = await job({ supports: 'operator' });
+  test('undecided supports inherit the local process while explicit none still disables supports', async () => {
+    const id = await job({ supports: 'operator', support_angle: 45 });
+    const none = await job({ supports: 'none' });
     for (const slicer of ['orca', 'bambu', 'prusa'] as const) {
       const result = await createSlicerProject(request([id], slicer));
       const entries = await archive(result);
-      expect(entries.get(slicer === 'prusa' ? 'Metadata/Slic3r_PE_model.config' : 'Metadata/model_settings.config'))
-        .toContain(`key="${slicer === 'prusa' ? 'support_material' : 'enable_support'}" value="0"`);
+      const settingsFile = slicer === 'prusa' ? 'Metadata/Slic3r_PE_model.config' : 'Metadata/model_settings.config';
+      expect(entries.get(settingsFile)).not.toMatch(/key="(?:enable_support|support_[^"]*)"/);
+      expect(entries.get(settingsFile)).toContain('key="layer_height"');
+      const disabled = await archive(await createSlicerProject(request([none], slicer)));
+      expect(disabled.get(settingsFile)).toContain(`key="${slicer === 'prusa' ? 'support_material' : 'enable_support'}" value="0"`);
     }
-    const sql = await db(); expect((await sql`SELECT supports FROM jobs WHERE id = ${id}`)[0].supports).toBe('operator');
+    const sql = await db();
+    expect((await sql`SELECT supports, support_angle FROM jobs WHERE id = ${id}`)[0]).toMatchObject({ supports: 'operator', support_angle: 45 });
     expect(() => exportRequest({ ...request([id]), supports: { [id]: 'tree' } })).toThrow('Unsupported export option');
   });
   test('snapshot survives subsequent database changes and links permit retries until expiry', async () => {

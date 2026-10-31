@@ -53,7 +53,7 @@ try {
   const response = await fetch(downloadUrl); assert.equal(response.status, 200);
   const archive = Buffer.from(await response.arrayBuffer()), entries = projectEntries(archive);
   assert.match(entries.get('Metadata/model_settings.config')!, /value="50%"/);
-  assert.match(entries.get('Metadata/model_settings.config')!, /key="enable_support" value="0"/);
+  assert.doesNotMatch(entries.get('Metadata/model_settings.config')!, /key="(?:enable_support|support_[^"]*)"/);
   const partial = await fetch(downloadUrl, { headers: { Range: 'bytes=10-29' } });
   assert.equal(partial.status, 206); assert.deepEqual(Buffer.from(await partial.arrayBuffer()), archive.subarray(10, 30));
   assert.equal((await fetch(downloadUrl, { headers: { Range: 'bytes=99999999-' } })).status, 416);

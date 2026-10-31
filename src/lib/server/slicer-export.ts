@@ -175,7 +175,7 @@ export async function createSlicerProject(input: unknown, signal?: AbortSignal, 
     const parts: ExportPart[] = [];
     let triangles = 0;
     for (const [index, job] of jobs.entries()) {
-      const supports = job.supports === 'operator' ? 'none' : job.supports as SupportChoice;
+      const supports = job.supports as SupportChoice;
       const file = Bun.file(filePath(job.storage_key));
       invariant(await file.exists(), 404, 'An STL file is missing. Contact the administrator.');
       invariant(file.size === job.file_size, 409, 'An STL changed on disk. Contact the administrator.');
