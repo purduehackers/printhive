@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { mkdtemp, rm, mkdir, utimes } from 'node:fs/promises';
+import { statSync, truncateSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -38,6 +39,50 @@ async function archive(result: Awaited<ReturnType<typeof createSlicerProject>>) 
 const request = (ids: string[], slicer: Slicer = 'orca') => ({ ids, slicer, printer: slicer === 'bambu' ? 'h2d' : 'core-one' });
 
 describe('native slicer project export', () => {
+  test('exports a valid repaired mesh when BunFile size metadata is uninitialized', async () => {
+    const id = await job();
+    const originalFile = Bun.file;
+    let wrapped = 0;
+    const fileMock = spyOn(Bun, 'file').mockImplementation(((...args: Parameters<typeof Bun.file>) => {
+      const file = originalFile(...args);
+      if (!/[\\/]mesh-\d+\.bin$/.test(String(args[0]))) return file;
+      wrapped++;
+      return new Proxy(file, {
+        get(target, key) {
+          if (key === 'size') return 0;
+          const value = Reflect.get(target, key, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    }) as typeof Bun.file);
+    try {
+      const entries = await archive(await createSlicerProject(request([id])));
+      const geometry = [...entries].filter(([name]) => name.endsWith('.model')).map(([, value]) => value).join('');
+      expect(geometry.match(/<vertex /g)).toHaveLength(4);
+      expect(geometry.match(/<triangle /g)).toHaveLength(4);
+      expect(wrapped).toBeGreaterThan(0);
+    } finally { fileMock.mockRestore(); }
+  });
+  test('still rejects a repaired mesh whose payload is truncated after a valid header', async () => {
+    const id = await job();
+    const originalFile = Bun.file;
+    let truncated = false;
+    const fileMock = spyOn(Bun, 'file').mockImplementation(((...args: Parameters<typeof Bun.file>) => {
+      const path = String(args[0]);
+      if (!truncated && /[\\/]mesh-\d+\.bin$/.test(path)) {
+        truncateSync(path, statSync(path).size - 4);
+        truncated = true;
+      }
+      return originalFile(...args);
+    }) as typeof Bun.file);
+    try {
+      await expect(createSlicerProject(request([id]))).rejects.toMatchObject({
+        status: 500, message: 'Invalid repaired mesh.',
+        cause: { message: 'Repaired mesh validation: vertices=4, triangles=4, expectedBytes=116, actualBytes=112' },
+      });
+      expect(truncated).toBe(true);
+    } finally { fileMock.mockRestore(); }
+  });
   test('preserves different settings and copies, omits private metadata, and emits a valid ZIP', async () => {
     const first = await job({ copies: 2, infill: 50, layer_height: 0.12, supports: 'tree', support_angle: 0 });
     const second = await job({ infill: 20, layer_height: 0.28, supports: 'normal', support_angle: 80 });

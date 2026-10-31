@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { HttpError, invariant } from './errors';
 import type { STLInfo } from '../stl';
 
@@ -21,8 +22,12 @@ export async function repairProjectMesh(source: string, destination: string, max
     const file = Bun.file(destination), header = Buffer.from(await file.slice(0, 20).arrayBuffer());
     invariant(header.length === 20 && header.toString('ascii', 0, 8) === 'TESTLM01' && header.readUInt32LE(8) === 1, 500, 'Invalid repaired mesh.');
     const vertices = header.readUInt32LE(12), triangles = header.readUInt32LE(16);
-    invariant(vertices > 0 && vertices <= maxTriangles * 3 && triangles > 0 && triangles <= maxTriangles &&
-      file.size === 20 + vertices * 12 + triangles * 12, 500, 'Invalid repaired mesh.');
+    // Reading a slice does not guarantee the original BunFile's lazy size is populated.
+    const actualBytes = (await stat(destination)).size, expectedBytes = 20 + vertices * 12 + triangles * 12;
+    if (!(vertices > 0 && vertices <= maxTriangles * 3 && triangles > 0 && triangles <= maxTriangles && actualBytes === expectedBytes))
+      throw new HttpError(500, 'Invalid repaired mesh.', {
+        cause: new Error(`Repaired mesh validation: vertices=${vertices}, triangles=${triangles}, expectedBytes=${expectedBytes}, actualBytes=${actualBytes}`),
+      });
     const mesh: ProjectMesh = { path: destination, vertices, triangles, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
     await meshVertices(mesh, () => {
       invariant(!stopped && !signal?.aborted, 408, 'Project preparation timed out or was canceled.');
