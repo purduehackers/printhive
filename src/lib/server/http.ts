@@ -30,8 +30,20 @@ export async function smallBody(request: Request, jsonBody = true): Promise<any>
   invariant(request.headers.get('content-type')?.split(';')[0] === 'application/json', 415, 'Send JSON metadata.');
   try { return JSON.parse(text); } catch { throw new HttpError(400, 'Invalid JSON.'); }
 }
+// Astro may move to 4322 when 4321 is occupied. Keep that fallback usable locally.
+const localOrigins = new Set(['localhost', '127.0.0.1', '[::1]'].flatMap(host =>
+  [4321, 4322].map(port => `http://${host}:${port}`)));
+function localRequest(request: Request, settings: ReturnType<typeof config>) {
+  return !settings.production && localOrigins.has(settings.origin) && localOrigins.has(new URL(request.url).origin);
+}
+export function appOrigin(request?: Request) {
+  const settings = config();
+  return request && localRequest(request, settings) ? new URL(request.url).origin : settings.origin;
+}
 export function checkOrigin(request: Request) {
-  invariant(request.headers.get('origin') === config().origin, 403, 'This request must come from PrintHive. Reload the page and try again.');
+  const settings = config(), origin = request.headers.get('origin');
+  const localTesting = localRequest(request, settings) && localOrigins.has(origin ?? '');
+  invariant(origin === settings.origin || localTesting, 403, 'This request must come from PrintHive. Reload the page and try again.');
 }
 const buckets = new Map<string, { count: number; expires: number }>();
 export function rateLimit(key: string, max: number, windowMs: number) {

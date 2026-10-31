@@ -9,6 +9,7 @@ import { reference } from '../../lib/shared';
 import { addOperator, editOperator, listOperators, removeOperator } from '../../lib/server/operators';
 import { addColor, addMaterial, listMaterialsWithColors, removeColor, removeMaterial, setDefaultColor, setDefaultMaterial } from '../../lib/server/materials';
 import { VERIFIED_EMAIL_COOKIE, getVerifiedEmail } from '../../lib/server/tokens';
+import { createSlicerProject, downloadSlicerProject } from '../../lib/server/slicer-export';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
@@ -17,6 +18,15 @@ export const ALL: APIRoute = async (context) => {
     if (path === 'health' && method === 'GET') {
       const sql = await db(); await sql`SELECT id FROM jobs LIMIT 1`;
       return json({ ok: true });
+    }
+    if (path === 'slicer-projects' && method === 'POST') {
+      const operator = await requireOperator(context);
+      rateLimit('slicer-export:' + operator.id, 20, 15 * 60 * 1000);
+      return json(await createSlicerProject(await smallBody(request), request.signal, request), 201);
+    }
+    if (path === 'slicer-projects' && method === 'GET') {
+      const token = new URL(request.url).searchParams.get('token') ?? '';
+      return await downloadSlicerProject(token, request);
     }
     if (path === 'verified-email' && method === 'DELETE') {
       context.cookies.delete(VERIFIED_EMAIL_COOKIE, { path: '/' });

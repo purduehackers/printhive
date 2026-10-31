@@ -1,6 +1,7 @@
 ---
 import Layout from '../../../layouts/Layout.astro';
 import StatusControls from '../../../components/StatusControls';
+import SlicerControls from '../../../components/SlicerControls';
 import { currentOperator } from '../../../lib/server/auth';
 import { db } from '../../../lib/server/db';
 import { effectiveGroupName, reference, resolveColor, summarizeGroupStatus, supportLabel, type Job, type Status } from '../../../lib/shared';
@@ -47,6 +48,7 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
             <div><dt>Copies</dt><dd>{job.copies}</dd></div>
             {groupLabel && <div><dt>Group / Batch</dt><dd>{groupLabel}</dd></div>}
           </dl>
+          <SlicerControls jobs={[job]} client:load />
           <h3>Operator notes</h3>
           <p class="operator-notes">{job.notes || 'No notes provided.'}</p>
         </section>

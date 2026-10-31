@@ -4,8 +4,10 @@ import { db } from './db';
 import { config } from './config';
 import { removeFile } from './storage';
 import { logWarning } from './log';
+import { cleanupSlicerExports } from './slicer-export';
 
 export async function cleanup(now = Date.now()) {
+  await cleanupSlicerExports(now);
   const sql = await db();
   // DELETE RETURNING claims expired jobs atomically, racing safely with confirmation/finalization.
   const expired = await sql`DELETE FROM jobs WHERE status = 'pending_confirmation'

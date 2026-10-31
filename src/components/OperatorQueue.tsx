@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type SubmitEvent } from 'react';
+import SlicerControls from './SlicerControls';
 import {
   effectiveGroupName,
   reference,
@@ -487,6 +488,8 @@ export default function OperatorQueue({ initialJobs }: OperatorQueueProps) {
               </button>
             </div>
           </div>
+
+          <SlicerControls jobs={jobs.filter(job => selectedIds.has(job.id))} />
 
           {/* Group Creation Inline Form */}
           {isGroupingModalOpen && (

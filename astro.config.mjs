@@ -7,8 +7,12 @@ export default defineConfig({
   adapter: node({ mode: 'standalone', bodySizeLimit: 524_288_000 }),
   integrations: [react()],
   session: false,
-  // Our middleware checks every mutation against runtime APP_ORIGIN, rather than
-  // deriving trust from Host/forwarded headers or baking a domain into the build.
+  server: ({ command }) => {
+    if (command !== 'dev') return {};
+    const origin = new URL(process.env.APP_ORIGIN ?? 'http://localhost:4321');
+    return { port: Number(origin.port || (origin.protocol === 'https:' ? 443 : 80)) };
+  },
+  // Middleware enforces runtime APP_ORIGIN, with a loopback-only development exception.
   security: { checkOrigin: false },
   vite: {
     ssr: { external: ['bun', 'nodemailer'] },

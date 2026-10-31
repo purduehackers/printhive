@@ -7,5 +7,5 @@
     "allowImportingTsExtensions": true
   },
   "include": [".astro/types.d.ts", "**/*"],
-  "exclude": ["dist", "node_modules", "public/preview-engine"]
+  "exclude": ["dist", "node_modules", "public/preview-engine", "test-results"]
 }
