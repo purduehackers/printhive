@@ -51,6 +51,15 @@ test('bed selection changes explicit native limits without mutating the source s
   expect(profile.configuration.printable_area[1]).toBe('200x0');
 });
 
+test('preview applies wall count to the slicer profile without mutating its defaults', () => {
+  const profile = { id: 'test', label: 'Test', configuration: { wall_loops: '2' } };
+  for (const walls of [2, 3, 4, 5, 6])
+    expect(profileForPreviewBed(profile, PREVIEW_PRINTERS[0], undefined, walls).configuration.wall_loops).toBe(String(walls));
+  expect(profile.configuration.wall_loops).toBe('2');
+  for (const walls of [1, 7, 2.5])
+    expect(() => profileForPreviewBed(profile, PREVIEW_PRINTERS[0], undefined, walls)).toThrow('Number of walls');
+});
+
 test('print time uses readable hours and minutes with minute rounding', () => {
   expect(formatPrintTime(0)).toBe('Under 1 min');
   expect(formatPrintTime(59)).toBe('Under 1 min');

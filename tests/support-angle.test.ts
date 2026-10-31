@@ -58,6 +58,7 @@ test('blank model angle preserves the printer profile and explicit angles invali
     mirror: false,
     scale: 1,
     infill: 15,
+    walls: 2,
     layerHeight: 0.2,
     supports: 'tree',
   };

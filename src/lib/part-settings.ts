@@ -5,6 +5,7 @@ export interface SharedPartSettings {
   material: string;
   color: string;
   infill: number;
+  walls: number;
   layerHeight: number;
   supports: string;
   supportAngle: string;
@@ -36,6 +37,7 @@ export function defaultPartSettings(materials: Material[]): SharedPartSettings {
     material: material.name,
     color: getDefaultColor(material),
     infill: 15,
+    walls: 2,
     layerHeight: 0.2,
     supports: 'operator',
     supportAngle: '',

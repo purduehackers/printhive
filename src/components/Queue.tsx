@@ -18,6 +18,7 @@ function Settings({ job }: { job: PublicJob }) {
       </span>
       <span>{job.layer_height} mm</span>
       <span>{job.infill}% infill</span>
+      <span>{job.walls} walls</span>
       <span>{job.copies} {job.copies === 1 ? 'copy' : 'copies'}</span>
     </div>
   );

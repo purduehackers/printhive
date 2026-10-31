@@ -110,8 +110,8 @@ describe('native slicer project export', () => {
     expect(geometry.match(/<triangle /g)).toHaveLength(triangles);
   });
   test('preserves different settings and copies, omits private metadata, and emits a valid ZIP', async () => {
-    const first = await job({ copies: 2, infill: 50, layer_height: 0.12, supports: 'tree', support_angle: 0 });
-    const second = await job({ infill: 20, layer_height: 0.28, supports: 'normal', support_angle: 80 });
+    const first = await job({ copies: 2, infill: 50, walls: 6, layer_height: 0.12, supports: 'tree', support_angle: 0 });
+    const second = await job({ infill: 20, walls: 3, layer_height: 0.28, supports: 'normal', support_angle: 80 });
     const result = await createSlicerProject(request([first, second]));
     expect(result.launchUrl).toStartWith('orcaslicer://open?file=');
     expect(decodeURIComponent(result.launchUrl!.split('file=')[1])).toBe(result.downloadUrl);
@@ -120,6 +120,8 @@ describe('native slicer project export', () => {
     expect(model.match(/<object /g)).toHaveLength(2); expect(model.match(/<item /g)).toHaveLength(3);
     expect(settings).toContain('key="sparse_infill_density" value="50%"');
     expect(settings).toContain('key="sparse_infill_density" value="20%"');
+    expect(settings).toContain('key="wall_loops" value="6"');
+    expect(settings).toContain('key="wall_loops" value="3"');
     expect(settings).toContain('key="layer_height" value="0.12"'); expect(settings).toContain('key="layer_height" value="0.28"');
     expect(settings).toContain('key="support_threshold_angle" value="0"'); expect(settings).toContain('key="support_threshold_angle" value="80"');
     expect(settings).toContain('value="tree(auto)"'); expect(settings).toContain('value="normal(auto)"');
@@ -127,7 +129,7 @@ describe('native slicer project export', () => {
     for (const text of entries.values()) for (const privateValue of ['test@purdue.edu', 'Private notes', 'bracket.stl', 'Test bracket']) expect(text).not.toContain(privateValue);
   });
   test('all slicers receive object settings without replacing local printer, filament or process presets', async () => {
-    const id = await job({ infill: 30, supports: 'tree', support_angle: 45 });
+    const id = await job({ infill: 30, walls: 5, supports: 'tree', support_angle: 45 });
     for (const slicer of ['orca', 'bambu', 'prusa'] as const) {
       const result = await createSlicerProject(request([id], slicer)), entries = await archive(result);
       expect(entries.has('Metadata/project_settings.config')).toBe(false);
@@ -137,11 +139,13 @@ describe('native slicer project export', () => {
         'nozzle_temperature', 'first_layer_temperature', 'filament_colour', 'enable_prime_tower', 'print_sequence', 'initial_layer_print_height'])
         expect(text).not.toContain(key);
       if (slicer !== 'prusa') {
+        expect(entries.get('Metadata/model_settings.config')).toContain('key="wall_loops" value="5"');
         expect(result.launchUrl).toStartWith(slicer === 'bambu' ? 'bambustudio://' : 'orcaslicer://');
         expect(entries.get('3D/3dmodel.model')).not.toContain('name="OrcaSlicer"');
       } else {
         expect(result.launchUrl).toBeNull();
         expect(entries.get('Metadata/Slic3r_PE_model.config')).toContain('key="fill_density" value="30%"');
+        expect(entries.get('Metadata/Slic3r_PE_model.config')).toContain('key="perimeters" value="5"');
         expect(entries.get('Metadata/Slic3r_PE_model.config')).toContain('key="support_material_style" value="organic"');
       }
     }
@@ -220,7 +224,7 @@ describe('native slicer project export', () => {
     expect(exportRequest({ ...request([id], 'prusa'), printer: 'h2d' })).toEqual(request([id], 'prusa'));
   });
   test('blank support angle inherits while explicit zero is retained', () => {
-    const settings = { infill:15, layer_height:0.2, supports:'tree', copies:1, mirror:0, material:'PLA', color:'black' };
+    const settings = { infill:15, walls:2, layer_height:0.2, supports:'tree', copies:1, mirror:0, material:'PLA', color:'black' };
     expect(objectSettings(settings, 'tree', 'orca').support_threshold_angle).toBeUndefined();
     expect(objectSettings({...settings,support_angle:0}, 'tree', 'orca').support_threshold_angle).toBe('0');
   });

@@ -32,20 +32,24 @@ test('global updates reach existing and new parts without overwriting explicit p
   const part: PartOptions = {
     copies: 3,
     mirror: true,
-    overrides: { infill: 30, scalePercent: '150' },
+    overrides: { infill: 30, walls: 4, scalePercent: '150' },
   };
   const changed = {
     ...global,
     color: 'red',
     layerHeight: 0.12,
     infill: 50,
+    walls: 6,
     scalePercent: '200',
   };
   const inherited = resolvePartSettings(changed, undefined, materials);
   const custom = resolvePartSettings(changed, part, materials);
   expect(inherited.infill).toBe(50);
+  expect(global.walls).toBe(2);
+  expect(inherited.walls).toBe(6);
   expect(inherited.scalePercent).toBe('200');
   expect(custom.infill).toBe(30);
+  expect(custom.walls).toBe(4);
   expect(custom.scalePercent).toBe('150');
   expect(custom.layerHeight).toBe(0.12);
   expect(custom.color).toBe('red');
@@ -54,6 +58,9 @@ test('global updates reach existing and new parts without overwriting explicit p
   expect(
     resolvePartSettings(changed, { ...part, overrides: {} }, materials).infill,
   ).toBe(50);
+  expect(
+    resolvePartSettings(changed, { ...part, overrides: {} }, materials).walls,
+  ).toBe(6);
 });
 
 test('material changes keep colors valid without discarding unrelated overrides', () => {

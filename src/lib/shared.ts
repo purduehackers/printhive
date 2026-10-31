@@ -1,6 +1,7 @@
 export const MAX_FILE_BYTES = 500 * 1024 * 1024;
 export const MAX_BATCH_SIZE = 10;
 export const INFILLS = [15, 20, 30, 50] as const;
+export const WALLS = [2, 3, 4, 5, 6] as const;
 export const COLORS = ['black', 'white', 'yellow', 'red'] as const;
 export const LAYERS = [0.12, 0.16, 0.2, 0.28] as const;
 export const SUPPORTS = ['operator', 'none', 'tree', 'normal'] as const;
@@ -13,7 +14,7 @@ export const transitions: Record<Status, Status[]> = {
   completed: ['queued'], canceled: ['queued'], failed: ['queued'], rejected: ['queued'],
 };
 export interface PrintSettings {
-  infill: number; material: string; color: string; layer_height: number; supports: string; support_angle?: number | null; copies: number; mirror: number;
+  infill: number; walls: number; material: string; color: string; layer_height: number; supports: string; support_angle?: number | null; copies: number; mirror: number;
 }
 export interface MaterialColor {
   id: number;

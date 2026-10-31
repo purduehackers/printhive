@@ -57,6 +57,7 @@ export function previewCacheKey(
     mirror: boolean;
     scale: number;
     infill: number;
+    walls: number;
     layerHeight: number;
     supports: string;
   },

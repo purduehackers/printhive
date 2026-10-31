@@ -70,7 +70,7 @@ const { jobs, filter, page, hasNext, revision } = await operatorQueue(Astro.url.
               <td>{job.email}</td>
               <td>
                 {job.material ?? 'PLA'} · {job.color} · {job.copies}×<br />
-                <span class="muted small">{job.layer_height} mm · {job.infill}%</span>
+                <span class="muted small">{job.layer_height} mm · {job.infill}% · {job.walls} walls</span>
               </td>
               <td><span class={`status ${job.status}`}>{job.status}</span></td>
               <td><a href={`/operator/jobs/${job.id}`} aria-label={`Manage ${job.title}`}>Manage →</a></td>

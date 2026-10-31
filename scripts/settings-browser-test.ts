@@ -15,7 +15,7 @@ try {
   const writes: string[] = [];
   const uploaded: string[] = [];
   let submitted:
-    | { items: Array<{ infill: number; copies: number; supports: string }> }
+    | { items: Array<{ infill: number; walls: number; copies: number; supports: string }> }
     | undefined;
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -29,8 +29,9 @@ try {
       request.url().endsWith('/api/submissions/batch')
     )
       submitted = request.postDataJSON();
-    if (request.method() === 'PUT')
-      uploaded.push(request.url().match(/submissions\/([^/]+)\/file/)![1]);
+    const fileUpload = new URL(request.url()).pathname.match(/submissions\/([^/]+)\/file$/);
+    if (request.method() === 'PUT' && fileUpload)
+      uploaded.push(fileUpload[1]);
   });
   // Observe real worker requests without replacing either computation or its output.
   await page.addInitScript(() => {
@@ -65,6 +66,9 @@ try {
   };
   await page.goto(h.origin + '/submit');
   await setting('Default infill').selectOption('30');
+  await expect(setting('Default number of walls')).toHaveValue('2');
+  expect(await setting('Default number of walls').locator('option').allTextContents()).toEqual(['2', '3', '4', '5', '6']);
+  await setting('Default number of walls').selectOption('4');
   await page
     .getByRole('spinbutton', { name: 'Default scale (%)', exact: true })
     .fill('150');
@@ -101,14 +105,18 @@ try {
   await page.getByText('More settings', { exact: true }).click();
   await expect(setting('Infill')).toHaveValue('');
   await setting('Infill').selectOption('30'); // An explicit override equal to global remains explicit.
+  await expect(setting('Number of walls')).toHaveValue('');
+  await setting('Number of walls').selectOption('4');
   await page
     .getByRole('spinbutton', { name: 'Scale (%)', exact: true })
     .fill('200');
   await setting('Default infill').selectOption('50');
+  await setting('Default number of walls').selectOption('6');
   await page
     .getByRole('spinbutton', { name: 'Default scale (%)', exact: true })
     .fill('125');
   await expect(setting('Infill')).toHaveValue('30');
+  await expect(setting('Number of walls')).toHaveValue('4');
   await expect(
     page.getByText('60 × 20 × 48 mm', { exact: true }),
   ).toBeVisible();
@@ -120,6 +128,7 @@ try {
     page.locator('.batch-file-list li').nth(1).locator('.file-options'),
   ).toBeVisible();
   await expect(setting('Infill')).toHaveValue('');
+  await expect(setting('Number of walls')).toHaveValue('');
   await expect(
     page.getByText('37.5 × 12.5 × 30 mm', { exact: true }),
   ).toBeVisible();
@@ -172,10 +181,18 @@ try {
     page.getByText('37.5 × 12.5 × 30 mm', { exact: true }),
   ).toBeVisible();
   await setting('Infill').selectOption('30');
+  await setting('Number of walls').selectOption('3');
   await page
     .getByRole('spinbutton', { name: 'Scale (%)', exact: true })
     .fill('200');
   await ready();
+  const wallTasks = await tasks();
+  await setting('Number of walls').selectOption('6');
+  await ready();
+  expect(await tasks()).toBe(wallTasks + 1);
+  await setting('Number of walls').selectOption('3');
+  await ready();
+  expect(await tasks()).toBe(wallTasks + 1);
   await mkdir('test-results', { recursive: true });
   await page.screenshot({
     path: 'test-results/default-settings-desktop.png',
@@ -250,14 +267,15 @@ try {
     page.getByRole('heading', { name: 'Check your email', exact: true }),
   ).toBeVisible();
   expect(
-    submitted!.items.map(({ infill, copies, supports }) => ({
+    submitted!.items.map(({ infill, walls, copies, supports }) => ({
       infill,
+      walls,
       copies,
       supports,
     })),
   ).toEqual([
-    { infill: 30, copies: 3, supports: 'operator' },
-    { infill: 50, copies: 1, supports: 'operator' },
+    { infill: 30, walls: 3, copies: 3, supports: 'operator' },
+    { infill: 50, walls: 6, copies: 1, supports: 'operator' },
   ]);
   expect(uploaded).toHaveLength(2);
   for (const [index, dimensions] of [

@@ -83,10 +83,11 @@ describe('batch submission flow', () => {
       email: 'maker@purdue.edu',
       notes: 'Print together if possible',
       infill: 30,
+      walls: 4,
       color: 'red',
       items: [
         { original_filename: 'housing.stl', file_size: Buffer.byteLength(asciiSTL), copies: 2 },
-        { original_filename: 'pinion.stl', file_size: Buffer.byteLength(asciiSTL) },
+        { original_filename: 'pinion.stl', file_size: Buffer.byteLength(asciiSTL), walls: 6 },
         { original_filename: 'cover.stl', file_size: Buffer.byteLength(asciiSTL), copies: 3 },
       ],
     });
@@ -132,6 +133,7 @@ describe('batch submission flow', () => {
       'Gearbox Assembly · cover',
     ]);
     expect(queue.every(j => j.color === 'red' && j.infill === 30)).toBe(true);
+    expect(queue.map(j => j.walls)).toEqual([4, 6, 4]);
     expect(queue.map(j => j.copies)).toEqual([2, 1, 3]);
     expect(typeof batch.batchId).toBe('string');
     expect(batch.batchTitle).toBe('Gearbox Assembly');

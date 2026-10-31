@@ -785,7 +785,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                       <td>{job.email}</td>
                       <td>
                         {job.material ?? 'PLA'} · {job.color} · {job.copies}×<br />
-                        <span className="muted small">{job.layer_height} mm · {job.infill}%</span>
+                        <span className="muted small">{job.layer_height} mm · {job.infill}% · {job.walls} walls</span>
                       </td>
                       <td><span className={`status ${job.status}`}>{job.status}</span></td>
                       <td><a href={`/operator/jobs/${job.id}`} aria-label={`Manage ${job.title}`}>Manage →</a></td>

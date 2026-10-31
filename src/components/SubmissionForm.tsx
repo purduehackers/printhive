@@ -158,6 +158,7 @@ export default function SubmissionForm({
     material,
     color,
     infill,
+    walls,
     layerHeight,
     supports,
     units,
@@ -445,6 +446,7 @@ export default function SubmissionForm({
             original_filename: singleFile.name,
             file_size: singleFile.size,
             infill: selected.infill,
+            walls: selected.walls,
             material: selected.material,
             color: selected.color,
             layer_height: selected.layerHeight,
@@ -479,6 +481,7 @@ export default function SubmissionForm({
             email: trimmedEmail,
             notes: trimmedNotes,
             infill: globalSettings.infill,
+            walls: globalSettings.walls,
             material: globalSettings.material,
             color: globalSettings.color,
             layer_height: globalSettings.layerHeight,
@@ -491,6 +494,7 @@ export default function SubmissionForm({
               material: settings[index].material,
               color: settings[index].color,
               infill: settings[index].infill,
+              walls: settings[index].walls,
               layer_height: settings[index].layerHeight,
               supports: settings[index].supports,
               support_angle: partSupportAngle(settings[index]) ?? null,
@@ -812,6 +816,10 @@ export default function SubmissionForm({
                       <div>
                         <dt>Infill</dt>
                         <dd>{part.infill}%</dd>
+                      </div>
+                      <div>
+                        <dt>Number of walls</dt>
+                        <dd>{part.walls}</dd>
                       </div>
                       <div>
                         <dt>Layer height</dt>
@@ -1156,6 +1164,7 @@ export default function SubmissionForm({
             retainedFiles={files}
             onUseMeters={() => updatePartSettings({ units: 'm' })}
             infill={infill}
+            walls={walls}
             layerHeight={layerHeight}
             supports={supports}
             supportAngle={activeSupportAngle ?? undefined}

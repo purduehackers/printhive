@@ -30,11 +30,11 @@ test('rejection migration preserves existing jobs, events, operators and session
       const [exit, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
       expect(error).toBe(''); expect(exit).toBe(0);
     }
-    expect(await sql`SELECT * FROM jobs`).toEqual([{ ...before, material: 'PLA', support_angle: null, batch_id: null, batch_title: null, group_name: null, has_thumbnail: 0 }]);
+    expect(await sql`SELECT * FROM jobs`).toEqual([{ ...before, material: 'PLA', support_angle: null, batch_id: null, batch_title: null, group_name: null, has_thumbnail: 0, walls: 2 }]);
     expect(await sql`SELECT * FROM job_events`).toEqual([{ ...event, feedback: '' }]);
     expect(await sql`SELECT * FROM operators`).toEqual([{ id: 1, username: 'existing', password_hash: 'hash', active: 1 }]);
     expect(await sql`SELECT * FROM sessions`).toHaveLength(1);
-    expect(await sql`SELECT * FROM schema_migrations`).toHaveLength(10);
+    expect(await sql`SELECT * FROM schema_migrations`).toHaveLength(11);
     expect(await sql`SELECT name, is_default FROM materials`).toEqual([{ name: 'PLA', is_default: 1 }]);
     expect(await sql`SELECT name, is_default FROM material_colors ORDER BY id ASC`).toEqual([
       { name: 'black', is_default: 1 },
@@ -44,6 +44,16 @@ test('rejection migration preserves existing jobs, events, operators and session
     ]);
     await sql`UPDATE jobs SET supports = 'normal' WHERE id = 'existing-job'`;
     expect((await sql`SELECT supports FROM jobs`)[0].supports).toBe('normal');
+    for (const walls of [2, 3, 4, 5, 6]) {
+      await sql`UPDATE jobs SET walls = ${walls} WHERE id = 'existing-job'`;
+      expect((await sql`SELECT walls FROM jobs`)[0].walls).toBe(walls);
+    }
+    for (const walls of [1, 7, 2.5]) {
+      let rejected = false;
+      try { await sql`UPDATE jobs SET walls = ${walls} WHERE id = 'existing-job'`; }
+      catch { rejected = true; }
+      expect(rejected).toBe(true);
+    }
     await sql`UPDATE jobs SET status = 'rejected' WHERE id = 'existing-job'`;
     await sql`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
       VALUES ('existing-job', 'printing', 'rejected', 1, 4, 'Fix the walls.')`;

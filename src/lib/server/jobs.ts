@@ -34,9 +34,9 @@ export async function reserve(input: unknown, { verifiedEmail = null }: { verifi
   // Create the capability before the pending job, so misconfiguration leaves no incomplete submission.
   const capability = seal(id, 'upload', expires);
   const rows = await sql`
-    INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, support_angle, copies, mirror,
+    INSERT INTO jobs (id, email, title, notes, infill, walls, material, color, layer_height, supports, support_angle, copies, mirror,
       original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
-    SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
+    SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.walls}, ${data.material}, ${data.color}, ${data.layer_height},
       ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
       'reserved', ${now + 86400000}, ${expires}, ${now}
     WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < ${MAX_BATCH_SIZE * 3}
@@ -70,9 +70,9 @@ export async function reserveBatch(input: unknown, { verifiedEmail = null }: { v
   for (let i = 0; i < itemsData.length; i++) {
     const data = itemsData[i], id = ids[i];
     await sql`
-      INSERT INTO jobs (id, email, title, notes, infill, material, color, layer_height, supports, support_angle, copies, mirror,
+      INSERT INTO jobs (id, email, title, notes, infill, walls, material, color, layer_height, supports, support_angle, copies, mirror,
         original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, batch_id, batch_title, group_name)
-      VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.material}, ${data.color}, ${data.layer_height},
+      VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.walls}, ${data.material}, ${data.color}, ${data.layer_height},
         ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
         'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name})`;
   }
@@ -264,7 +264,7 @@ export async function confirmation(token: string, commit = false) {
 }
 export async function publicQueue(): Promise<PublicJob[]> {
   const sql = await db();
-  return sql`SELECT id, title, status, infill, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version, batch_id, batch_title, group_name
+  return sql`SELECT id, title, status, infill, walls, material, color, layer_height, supports, support_angle, copies, mirror, queued_at, confirmed_at, version, batch_id, batch_title, group_name
     FROM jobs WHERE status IN ('queued', 'printing') AND confirmed_at IS NOT NULL
     ORDER BY CASE status WHEN 'printing' THEN 0 ELSE 1 END, queued_at, id`;
 }

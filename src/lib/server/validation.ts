@@ -1,4 +1,4 @@
-import { COLORS, INFILLS, LAYERS, MAX_BATCH_SIZE, MAX_FILE_BYTES, SUPPORTS } from '../shared';
+import { COLORS, INFILLS, WALLS, LAYERS, MAX_BATCH_SIZE, MAX_FILE_BYTES, SUPPORTS } from '../shared';
 import { invariant } from './errors';
 
 export interface AllowedMaterial {
@@ -60,7 +60,7 @@ export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
   return {
     support_angle: supportAngle as number | null,
     title, email, notes: string('notes', 5000, true), original_filename: filename,
-    file_size: Number(d.file_size), infill: choice('infill', INFILLS, 15),
+    file_size: Number(d.file_size), infill: choice('infill', INFILLS, 15), walls: choice('walls', WALLS, 2),
     material, color,
     layer_height: choice('layer_height', LAYERS, 0.2), supports: choice('supports', SUPPORTS, 'operator'),
     copies: choice('copies', [1, 2, 3, 4, 5], 1), mirror: choice('mirror', [0, 1], 0),
@@ -113,6 +113,7 @@ export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial
         file_size: item.file_size,
         notes: item.notes ?? d.notes,
         infill: item.infill ?? d.infill,
+        walls: item.walls ?? d.walls,
         material: item.material ?? d.material,
         color: item.color ?? d.color,
         layer_height: item.layer_height ?? d.layer_height,

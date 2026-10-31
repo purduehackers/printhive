@@ -1,5 +1,5 @@
 import type { PreviewProfile } from '@time-estimator/browser-preview';
-import { AVAILABLE_PRINTERS, type PrinterSpec } from './shared';
+import { AVAILABLE_PRINTERS, WALLS, type PrinterSpec } from './shared';
 
 const coreOne = AVAILABLE_PRINTERS.find(
   (printer) => printer.id === 'prusa-core-one-plus',
@@ -162,11 +162,12 @@ export function selectPreviewPrinter(dimensions: number[]): PrinterSpec {
   return fitsPreviewPrinter(dimensions, coreOne) ? coreOne : h2d;
 }
 
-/** Apply physical bed limits and an optional per-part support threshold. */
+/** Apply physical bed limits and optional per-part print settings. */
 export function profileForPreviewBed(
   profile: PreviewProfile,
   printer: PrinterSpec,
   supportAngle?: number,
+  walls?: number,
 ): PreviewProfile {
   if (
     supportAngle !== undefined &&
@@ -175,6 +176,8 @@ export function profileForPreviewBed(
     throw new Error(
       'Support angle must be a whole number from 0 to 90 degrees.',
     );
+  if (walls !== undefined && !WALLS.some((value) => value === walls))
+    throw new Error('Number of walls must be a whole number from 2 to 6.');
   const { x, y, z } = printer.buildVolume;
   return {
     // Do not include display-only allowances in engine inputs or the expensive-result cache key.
@@ -183,6 +186,7 @@ export function profileForPreviewBed(
     id: `${profile.id}:bed:${printer.id}`,
     configuration: {
       ...profile.configuration,
+      ...(walls === undefined ? {} : { wall_loops: String(walls) }),
       ...(supportAngle === undefined
         ? {}
         : { support_threshold_angle: String(supportAngle) }),

@@ -58,6 +58,7 @@ interface Props {
   mirror: boolean;
   scale: number;
   infill: number;
+  walls: number;
   layerHeight: number;
   supports: string;
   supportAngle?: number;
@@ -77,6 +78,7 @@ export default function Preview({
   mirror,
   scale,
   infill,
+  walls,
   layerHeight,
   supports,
   supportAngle,
@@ -229,6 +231,7 @@ export default function Preview({
     rotation,
     scale,
     infill,
+    walls,
     layerHeight,
     supports,
     supportAngle,
@@ -313,6 +316,7 @@ export default function Preview({
       profile,
       printer,
       supportAngle,
+      walls,
     );
     const key = cacheRuntime
       ? previewCacheKey(cacheRuntime.key, effectiveProfile, {
@@ -320,6 +324,7 @@ export default function Preview({
           mirror,
           scale,
           infill,
+          walls,
           layerHeight,
           supports,
         })
@@ -412,6 +417,7 @@ export default function Preview({
     rotation,
     scale,
     infill,
+    walls,
     layerHeight,
     supports,
     supportAngle,

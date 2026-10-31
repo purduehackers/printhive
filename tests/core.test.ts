@@ -48,7 +48,7 @@ describe('validation and bounded STL parsing', () => {
     expect(error).toBe(''); expect(exitCode).toBe(0); expect(output).toContain('<p>ready</p>');
   });
   test('defaults match requested print settings and email normalizes', () => {
-    expect(metadata(submission({ email: 'Test@PURDUE.EDU' }))).toMatchObject({ email: 'test@purdue.edu', infill: 15, layer_height: 0.2, supports: 'operator', color: 'black', copies: 1, mirror: 0 });
+    expect(metadata(submission({ email: 'Test@PURDUE.EDU' }))).toMatchObject({ email: 'test@purdue.edu', infill: 15, walls: 2, layer_height: 0.2, supports: 'operator', color: 'black', copies: 1, mirror: 0 });
   });
   test('single submissions preserve explicit zero angles and omitted legacy defaults', async () => {
     const explicit = await reserve(submission({ support_angle: 0 }));
@@ -56,6 +56,15 @@ describe('validation and bounded STL parsing', () => {
     const sql = await db();
     expect((await sql`SELECT support_angle FROM jobs WHERE id=${explicit.id}`)[0].support_angle).toBe(0);
     expect((await sql`SELECT support_angle FROM jobs WHERE id=${legacy.id}`)[0].support_angle).toBeNull();
+  });
+  test('wall count accepts 2 through 6, persists selections, and defaults legacy submissions to 2', async () => {
+    for (const walls of [2, 3, 4, 5, 6]) {
+      const saved = await reserve(submission({ walls }));
+      expect((await (await db())`SELECT walls FROM jobs WHERE id = ${saved.id}`)[0].walls).toBe(walls);
+    }
+    for (const walls of [0, 1, 7, 2.5, '4', true])
+      expect(() => metadata(submission({ walls }))).toThrow('Invalid walls');
+    expect(metadata(submission()).walls).toBe(2);
   });
   test('rejects wrong domains, bounds, and unsupported settings', () => {
     for (const overrides of [{ email: 'test@cs.purdue.edu' }, { email: 'test@purdue.edu.evil.com' }, { title: 'x'.repeat(201) }, { notes: 'x'.repeat(5001) }, { infill: 40 }, { mirror: true }, { copies: 6 }, { color: 'blue' }, { file_size: MAX_FILE_BYTES + 1 }, { original_filename: '../bad.stl' }]) expect(() => metadata(submission(overrides))).toThrow();
@@ -162,7 +171,7 @@ describe('authenticated links and confirmation', () => {
     expect(job.batch_id).toBeNull();
     expect(job.batch_title).toBeNull();
     expect(job.group_name).toBeNull();
-    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'material', 'color', 'layer_height', 'supports', 'support_angle', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version', 'batch_id', 'batch_title', 'group_name'].sort());
+    expect(Object.keys(job).sort()).toEqual(['id', 'title', 'status', 'infill', 'walls', 'material', 'color', 'layer_height', 'supports', 'support_angle', 'copies', 'mirror', 'queued_at', 'confirmed_at', 'version', 'batch_id', 'batch_title', 'group_name'].sort());
   });
 });
 describe('upload and delivery failure semantics', () => {

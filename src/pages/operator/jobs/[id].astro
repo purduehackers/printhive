@@ -42,6 +42,7 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
             <div><dt>Material</dt><dd>{job.material ?? 'PLA'}</dd></div>
             <div><dt>Filament</dt><dd><i class={`swatch ${job.color.toLowerCase()}`} style={`background-color: ${resolveColor(job.color)};`} />{job.color}</dd></div>
             <div><dt>Infill</dt><dd>{job.infill}%</dd></div>
+            <div><dt>Number of walls</dt><dd>{job.walls}</dd></div>
             <div><dt>Layer height</dt><dd>{job.layer_height} mm</dd></div>
             <div><dt>Supports</dt><dd>{supportLabel(job.supports)}</dd></div>
             <div><dt>Support angle</dt><dd>{job.support_angle == null ? 'Printer default' : `${job.support_angle}°`}</dd></div>

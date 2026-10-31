@@ -1,5 +1,6 @@
 import {
   INFILLS,
+  WALLS,
   LAYERS,
   SUPPORTS,
   supportLabel,
@@ -119,6 +120,11 @@ export default function PartSettingsFields({
         'infill',
         'Infill',
         INFILLS.map((value) => [value, `${value}%`]),
+      )}
+      {select(
+        'walls',
+        'Number of walls',
+        WALLS.map((value) => [value, String(value)]),
       )}
       {select(
         'layerHeight',
