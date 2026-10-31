@@ -38,6 +38,7 @@ try {
   const mesh = await readFile(new URL('../tests/support-bracket.stl', import.meta.url));
   for (const batch of [false, true]) {
     await page.goto(h.origin + '/submit');
+    await page.locator('astro-island[component-url*="SubmissionForm"]:not([ssr])').waitFor();
     await page.getByLabel('Project / part title').fill(batch ? 'Thumbnail batch' : 'Thumbnail bracket');
     await page.getByLabel('Purdue email').fill('thumbnail@purdue.edu');
     await page.getByLabel('STL file', { exact: true }).setInputFiles((batch ? ['left.stl', 'right.stl'] : ['bracket.stl']).map(name => ({ name, mimeType: 'application/octet-stream', buffer: mesh })));
@@ -87,6 +88,13 @@ try {
   expect(publicJobs).toHaveLength(3);
   expect(publicJobs.every((job: object) => !('has_thumbnail' in job))).toBe(true);
   const imageResponse = await context.request.get(h.origin + src);
+  expect(imageResponse.headers()['cache-control']).toBe('private, no-cache');
+  const tag = imageResponse.headers()['etag'];
+  expect(tag).toBeTruthy();
+  const unchanged = await context.request.get(h.origin + src, { headers: { 'If-None-Match': tag } });
+  expect(unchanged.status()).toBe(304);
+  expect((await unchanged.body()).byteLength).toBe(0);
+  expect((await fetch(h.origin + src, { headers: { 'If-None-Match': tag } })).status).toBe(401);
   const png = await imageResponse.body();
   await mkdir('test-results', { recursive: true });
   await writeFile('test-results/print-thumbnail.png', png);
@@ -141,6 +149,10 @@ try {
   expect(fallbackMs).toBeLessThan(3000);
   const snapshot = await (await context.request.get(h.origin + '/api/operator/queue')).json();
   expect(snapshot.jobs.find((job: { title: string }) => job.title === 'No GPU fallback').has_thumbnail).toBe(0);
+  await context.request.post(h.origin + '/api/logout', { headers: { Origin: h.origin } });
+  const signedOut = await context.request.get(h.origin + src, { headers: { 'If-None-Match': tag } });
+  expect(signedOut.status()).toBe(401);
+  expect(signedOut.headers()['cache-control']).toBe('no-store');
   expect(errors).toEqual([]);
   await writeFile('test-results/print-thumbnails.json', JSON.stringify({ timings, renderMs, fallbackMs, pngBytes: png.length, pixels, whitePixels }, null, 2));
   console.log('Thumbnail browser checks passed:', JSON.stringify({ timings, renderMs, fallbackMs, pngBytes: png.length, pixels, whitePixels }));

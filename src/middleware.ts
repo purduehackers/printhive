@@ -11,7 +11,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (response.status >= 500) logError('http.server_error_response', new Error('Route returned a server error; see preceding logs for the underlying failure.'), {
       method: context.request.method, path: context.url.pathname, status: response.status,
     });
-    response.headers.set('Cache-Control', 'no-store');
+    const revalidatedThumbnail = context.request.method === 'GET' &&
+      /^\/api\/print-thumbnails\/[a-f0-9-]{36}$/.test(context.url.pathname) &&
+      [200, 304].includes(response.status) && response.headers.get('Cache-Control') === 'private, no-cache';
+    if (!revalidatedThumbnail) response.headers.set('Cache-Control', 'no-store');
     // Hide confirmation paths/tokens while retaining Origin on browser form POSTs.
     response.headers.set('Referrer-Policy', 'strict-origin');
     response.headers.set('X-Content-Type-Options', 'nosniff');

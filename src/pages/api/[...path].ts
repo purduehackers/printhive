@@ -79,7 +79,7 @@ export const ALL: APIRoute = async (context) => {
       const token = new URL(request.url).searchParams.get('token');
       if (token) invariant(unseal(token, 'thumbnail').id === thumbnailRead[1], 403, 'This thumbnail belongs to another print.');
       else await requireOperator(context);
-      return await readThumbnail(thumbnailRead[1]);
+      return await readThumbnail(thumbnailRead[1], token ? undefined : request);
     }
     if (uploadMatch && method === 'PUT') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';

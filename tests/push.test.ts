@@ -85,6 +85,31 @@ test('push thumbnails use a scoped expiring image capability and batches can use
   await expect(storeThumbnail(batch.items[0].id, batch.items[0].capability, thumbnailRequest())).rejects.toMatchObject({ status: 409 });
 });
 
+test('operator thumbnails revalidate without resending bytes while capability responses stay uncached', async () => {
+  const item = await reserve(submission());
+  await storeThumbnail(item.id, item.capability, thumbnailRequest());
+  await upload(item.id, item.capability, body(), mailer, { verifiedEmail: 'test@purdue.edu' });
+  const url = `http://localhost:4321/api/print-thumbnails/${item.id}`;
+  const first = await readThumbnail(item.id, new Request(url));
+  expect(first.headers.get('cache-control')).toBe('private, no-cache');
+  const tag = first.headers.get('etag')!;
+  expect(tag).toStartWith('W/"');
+  expect(Buffer.from(await first.arrayBuffer())).toEqual(thumbnailPNG());
+  for (const value of [tag, tag.replace(/^W\//, ''), `"unrelated", ${tag}`, '*']) {
+    const cached = await readThumbnail(item.id, new Request(url, { headers: { 'If-None-Match': value } }));
+    expect(cached.status).toBe(304);
+    expect((await cached.arrayBuffer()).byteLength).toBe(0);
+    expect(cached.headers.get('etag')).toBe(tag);
+  }
+  expect((await readThumbnail(item.id, new Request(url, { headers: { 'If-None-Match': '"old-image"' } }))).status).toBe(200);
+  const notification = await readThumbnail(item.id);
+  expect(notification.headers.get('cache-control')).toContain('no-store');
+  expect(notification.headers.has('etag')).toBe(false);
+  const [job] = await (await db())`SELECT storage_key FROM jobs WHERE id = ${item.id}`;
+  await removeFile(job.storage_key);
+  await expect(readThumbnail(item.id, new Request(url, { headers: { 'If-None-Match': tag } }))).rejects.toMatchObject({ status: 404 });
+});
+
 test('expired pending thumbnails and orphan images are cleaned while confirmed thumbnails survive', async () => {
   const pending = await reserve(submission()), confirmed = await reserve(submission());
   for (const item of [pending, confirmed]) await storeThumbnail(item.id, item.capability, thumbnailRequest());

@@ -44,6 +44,7 @@ interface Model {
   mirror: boolean;
   scale: number;
   positions: Float32Array;
+  triangles: number;
   min: number[];
   max: number[];
   hullPositions?: Float32Array;

@@ -40,10 +40,7 @@ export function preparePrintThumbnails(parts: Part[], signal: AbortSignal): Prom
         renderer.toneMapping = T.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 0.85;
         const geometry = new T.BufferGeometry();
-        const count = mesh.positions.length / 9, stride = Math.max(1, Math.ceil(count / 100_000));
-        const positions = new Float32Array(Math.ceil(count / stride) * 9);
-        for (let i = 0, j = 0; i < count; i += stride, j += 9)
-          positions.set(mesh.positions.subarray(i * 9, i * 9 + 9), j);
+        const positions = mesh.positions;
         geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
         geometry.computeVertexNormals();
         const color = new T.Color(previewColor(part.color));

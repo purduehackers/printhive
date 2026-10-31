@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { db } from './db';
 import { filePath } from './storage';
@@ -45,12 +45,26 @@ export async function storeThumbnail(id: string, token: string, request: Request
   });
 }
 
-export async function readThumbnail(id: string) {
+export async function readThumbnail(id: string, request?: Request) {
   const sql = await db();
   const [job] = await sql`SELECT storage_key FROM jobs WHERE id = ${id} AND has_thumbnail = 1 AND confirmed_at IS NOT NULL`;
   invariant(job, 404, 'Thumbnail not found.');
-  const file = Bun.file(thumbnailPath(job.storage_key));
-  invariant(await file.exists(), 404, 'Thumbnail not found.');
-  return new Response(file, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store',
-    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' } });
+  const path = thumbnailPath(job.storage_key);
+  const info = await stat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  invariant(info, 404, 'Thumbnail not found.');
+  const headers = new Headers({ 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+  if (request) {
+    // Operator requests authenticate before reaching here. Always revalidate access,
+    // but reuse the browser's image bytes when this immutable thumbnail is unchanged.
+    const tag = `"${id}-${info.size.toString(16)}-${info.mtimeMs.toString(16)}"`;
+    headers.set('ETag', `W/${tag}`);
+    headers.set('Cache-Control', 'private, no-cache');
+    const matches = request.headers.get('if-none-match')?.split(',').some(value => {
+      const candidate = value.trim();
+      return candidate === '*' || candidate.replace(/^W\//, '') === tag;
+    });
+    if (matches) return new Response(null, { status: 304, headers });
+  }
+  return new Response(Bun.file(path), { headers });
 }

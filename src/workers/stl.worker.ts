@@ -84,6 +84,7 @@ self.onmessage = async ({
     self.postMessage(
       {
         positions,
+        triangles: info.triangles,
         min: placement.bounds.min,
         max: placement.bounds.max,
         hullPositions,
