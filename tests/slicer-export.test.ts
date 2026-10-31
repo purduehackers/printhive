@@ -36,7 +36,7 @@ async function archive(result: Awaited<ReturnType<typeof createSlicerProject>>) 
   const response = await downloadSlicerProject(token);
   return projectEntries(Buffer.from(await response.arrayBuffer()));
 }
-const request = (ids: string[], slicer: Slicer = 'orca') => ({ ids, slicer, printer: slicer === 'bambu' ? 'h2d' : 'core-one' });
+const request = (ids: string[], slicer: Slicer = 'orca') => ({ ids, slicer });
 
 describe('native slicer project export', () => {
   test('exports a valid repaired mesh when BunFile size metadata is uninitialized', async () => {
@@ -182,11 +182,26 @@ describe('native slicer project export', () => {
     await sql`UPDATE jobs SET color = 'white' WHERE id = ${other}`;
     await expect(createSlicerProject(request([id, other]))).rejects.toThrow('same material and color');
   });
-  test('does not resize a model to fit the printer', async () => {
-    const id = await job(); const large = solidSTL.replaceAll('vertex 10 0 0', 'vertex 300 0 0');
+  test('exports oversized models and copies at original scale for every slicer', async () => {
+    const id = await job({ copies: 5 });
+    const large = solidSTL.replaceAll('vertex 10 0 0', 'vertex 400 0 0')
+      .replaceAll('vertex 0 10 0', 'vertex 0 350 0').replaceAll('vertex 0 0 10', 'vertex 0 0 400');
     await Bun.write(filePath(`${id}.stl`), large); const sql = await db();
     await sql`UPDATE jobs SET file_size = ${Buffer.byteLength(large)} WHERE id = ${id}`;
-    await expect(createSlicerProject(request([id]))).rejects.toThrow('does not fit');
+    for (const slicer of ['orca', 'bambu', 'prusa'] as const) {
+      const entries = await archive(await createSlicerProject(request([id], slicer)));
+      const geometry = [...entries].filter(([name]) => name.endsWith('.model')).map(([, value]) => value).join('');
+      const vertices = [...geometry.matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/g)].map(vertex => vertex.slice(1).map(Number));
+      for (const [axis, extent] of [400, 350, 400].entries())
+        expect(Math.max(...vertices.map(vertex => vertex[axis])) - Math.min(...vertices.map(vertex => vertex[axis]))).toBe(extent);
+      const transforms = [...geometry.matchAll(/<item [^>]*transform="([^"]+)"/g)].map(item => item[1].split(' ').map(Number));
+      expect(transforms).toHaveLength(5);
+      for (const transform of transforms) expect(transform.slice(0, 9)).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      for (let first = 0; first < transforms.length; first++) for (let second = first + 1; second < transforms.length; second++) {
+        const [a, b] = [transforms[first], transforms[second]];
+        expect(a[9] + 400 <= b[9] || b[9] + 400 <= a[9] || a[10] + 350 <= b[10] || b[10] + 350 <= a[10]).toBe(true);
+      }
+    }
   });
   test('expired artifacts and abandoned builds are cleaned without deleting source files', async () => {
     const id = await job(), result = await createSlicerProject(request([id]));
@@ -195,13 +210,14 @@ describe('native slicer project export', () => {
     await utimes(path, old, old); await cleanupSlicerExports();
     expect(await Bun.file(path).exists()).toBe(false); expect(await Bun.file(filePath(`${id}.stl`)).exists()).toBe(true);
   });
-  test('rejects invalid selections, slicers, printer combinations and unsupported options', () => {
+  test('rejects invalid selections, slicers and unsupported options', () => {
     const id = randomUUID();
     for (const body of [null, {}, request([]), request([id, id]), request(Array.from({length:11}, randomUUID)),
-      { ...request([id]), slicer: 'evil' }, { ...request([id]), printer: 'unknown' }, { ...request([id]), slicer: 'bambu' },
+      { ...request([id]), slicer: 'evil' }, { ...request([id]), layout: 'unknown' },
       { ...request([id]), supports: { [id]: 'auto' } }, { ...request([id]), settings: { layer_height: 99 } }])
       expect(() => exportRequest(body)).toThrow();
     expect(slicerLaunchUrl('prusa', 'https://example.test')).toBeNull();
+    expect(exportRequest({ ...request([id], 'prusa'), printer: 'h2d' })).toEqual(request([id], 'prusa'));
   });
   test('blank support angle inherits while explicit zero is retained', () => {
     const settings = { infill:15, layer_height:0.2, supports:'tree', copies:1, mirror:0, material:'PLA', color:'black' };

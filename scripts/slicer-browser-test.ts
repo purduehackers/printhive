@@ -25,7 +25,7 @@ async function submit(title: string, supports: string, infill: number, layer_hei
 try {
   const first = await submit('Export bracket A', 'operator', 50, 0.12);
   const second = await submit('Export bracket B', 'tree', 20, 0.28);
-  const body = { ids: [first], slicer: 'orca', printer: 'core-one' };
+  const body = { ids: [first], slicer: 'orca' };
   assert.equal((await post('/api/slicer-projects', body)).status, 401);
   const login = await post('/api/login', { username: 'operator', password: 'test-password-12345' });
   const cookie = login.headers.get('set-cookie')!.split(';')[0];
@@ -59,7 +59,6 @@ try {
   assert.equal((await fetch(downloadUrl, { headers: { Range: 'bytes=99999999-' } })).status, 416);
   await controls.getByRole('combobox', { name: 'Open with', exact: true }).selectOption('bambu');
   await expect(open).toHaveCount(0);
-  await expect(controls).toContainText('Uses your locally selected printer, filament and process presets.');
   assert.deepEqual(await selectorWidths(), initialWidths, 'Bambu selection changed the dropdown widths');
   await controls.getByRole('button', { name: 'Prepare project' }).click();
   await expect(controls.getByRole('link', { name: 'Open in Bambu Studio' })).toHaveAttribute('href', /^bambustudio:\/\//);

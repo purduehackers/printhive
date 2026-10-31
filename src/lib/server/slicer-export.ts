@@ -9,7 +9,7 @@ import { filePath } from './storage';
 import { seal, unseal } from './tokens';
 import { parseSTL } from '../stl';
 import { MAX_FILE_BYTES, reference, type Job } from '../shared';
-import { EXPORT_TTL, MAX_EXPORT_JOBS, SLICERS, SLICER_PRINTERS, slicerLaunchUrl, type SlicerExportRequest, type SlicerExportResult, type SupportChoice } from '../slicer';
+import { EXPORT_TTL, MAX_EXPORT_JOBS, SLICERS, slicerLaunchUrl, type SlicerExportRequest, type SlicerExportResult, type SupportChoice } from '../slicer';
 import { writeProjectZip, type ProjectEntry } from './project-zip';
 import { objectSettings } from './slicer-settings';
 import { logWarning } from './log';
@@ -26,14 +26,13 @@ const directory = () => join(config().dataDir, 'slicer-exports');
 export function exportRequest(input: unknown): SlicerExportRequest {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid slicer request.');
   const body = input as Record<string, unknown>;
+  // Ignore the former printer field so already-open operator tabs can still export.
   invariant(Object.keys(body).every(key => ['ids', 'slicer', 'printer'].includes(key)), 400, 'Unsupported export option.');
   invariant(SLICERS.some(slicer => slicer.id === body.slicer), 400, 'Choose a supported slicer.');
-  const printer = SLICER_PRINTERS.find(printer => printer.id === body.printer);
-  invariant(printer && (printer.slicers as readonly unknown[]).includes(body.slicer), 400, 'Choose a printer supported by this slicer.');
   invariant(Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= MAX_EXPORT_JOBS &&
     body.ids.every(id => typeof id === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)) && new Set(body.ids).size === body.ids.length,
   400, `Choose between 1 and ${MAX_EXPORT_JOBS} different prints.`);
-  return { ids: body.ids as string[], slicer: body.slicer as SlicerExportRequest['slicer'], printer: printer.id };
+  return { ids: body.ids as string[], slicer: body.slicer as SlicerExportRequest['slicer'] };
 }
 
 export async function cleanupSlicerExports(now = Date.now()) {
@@ -76,15 +75,12 @@ export async function downloadSlicerProject(token: string, request?: Request) {
 
 interface ExportPart { job: Job; info: ProjectMesh; supports: SupportChoice; id: number; x: number; y: number }
 
-// The fixed orientation and scale are intentional. Reject overflowing selections rather than shrink them.
-function arrange(parts: ExportPart[], bed: readonly number[]) {
-  let x = 5, y = 5, rowDepth = 0;
+// Spread copies out without assuming a printer's bed dimensions or changing scale.
+function arrange(parts: ExportPart[]) {
+  let x = 5;
   for (const part of parts) {
-    const [width, depth, height] = part.info.max.map((value, axis) => value - part.info.min[axis]);
-    invariant(width <= bed[0] - 10 && depth <= bed[1] - 10 && height <= bed[2], 422, `Print #${reference(part.job.id)} does not fit this printer in its saved orientation with a 5 mm edge margin.`);
-    if (x + width > bed[0] - 5) { x = 5; y += rowDepth + 6; rowDepth = 0; }
-    invariant(y + depth <= bed[1] - 5, 422, 'These models and copies do not fit on one plate. Select fewer prints or copies.');
-    part.x = x; part.y = y; x += width + 6; rowDepth = Math.max(rowDepth, depth);
+    part.x = x; part.y = 5;
+    x += part.info.max[0] - part.info.min[0] + 6;
   }
 }
 
@@ -188,8 +184,7 @@ export async function createSlicerProject(input: unknown, signal?: AbortSignal, 
       check();
       for (let copy = 0; copy < job.copies; copy++) parts.push({ job, supports, info, id: (index + 1) * (request.slicer === 'prusa' ? 1 : 2), x: 0, y: 0 });
     }
-    const printer = SLICER_PRINTERS.find(printer => printer.id === request.printer)!;
-    arrange(parts, printer.bed);
+    arrange(parts);
     const prusa = request.slicer === 'prusa';
     const modelPath = join(temporary, 'model.xml');
     await writeModel(modelPath, parts, request.slicer, check);

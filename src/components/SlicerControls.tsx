@@ -7,7 +7,6 @@ type ExportJob = Pick<Job, 'id' | 'version'>;
 export default function SlicerControls({ jobs }: { jobs: ExportJob[] }) {
   const id = useId();
   const [slicer, setSlicer] = useState<Slicer>('orca');
-  const printer = slicer === 'bambu' ? 'h2d' : 'core-one';
   const [result, setResult] = useState<SlicerExportResult | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,7 +35,7 @@ export default function SlicerControls({ jobs }: { jobs: ExportJob[] }) {
     try {
       const response = await fetch('/api/slicer-projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: current.signal,
-        body: JSON.stringify({ ids: jobs.map(job => job.id), slicer, printer }),
+        body: JSON.stringify({ ids: jobs.map(job => job.id), slicer }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not prepare this project.');
@@ -59,9 +58,6 @@ export default function SlicerControls({ jobs }: { jobs: ExportJob[] }) {
           {busy ? 'Preparing project…' : result && !expired ? 'Prepare again' : 'Prepare project'}
         </button>
       </div>
-      <p className="small muted slicer-help">Uses your locally selected printer, filament and process presets. Includes model infill, layer height, supports and copies; “Operator decides” uses no supports. Choose Open as project if asked to retain model settings.</p>
-      <p className="small muted slicer-help">Choose your printer and filament in your slicer, then review the plate before printing.</p>
-      {slicer === 'prusa' && <p className="small muted">Download the prepared project, then open it in PrusaSlicer. Direct opening from this website is restricted by PrusaSlicer.</p>}
       {tooMany && <p className="notice error" role="alert">Select at most {MAX_EXPORT_JOBS} prints for one project.</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
     </form>
@@ -70,7 +66,6 @@ export default function SlicerControls({ jobs }: { jobs: ExportJob[] }) {
         <span className="small">Project ready · link expires in 15 minutes.</span>
         {result.launchUrl && <a className="button primary" href={result.launchUrl}>Open in {selected.name} ↗</a>}
         <a className={`button ${result.launchUrl ? 'secondary' : 'primary'}`} href={result.downloadUrl}>Download project ↓</a>
-        {result.launchUrl && <span className="small muted">If the app does not open, enable website downloads in your slicer or use Download project.</span>}
       </>}
     </div>}
   </section>;

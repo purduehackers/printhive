@@ -42,7 +42,7 @@ try {
   for (const target of targets) {
     const name = `${target.slicer}-${target.printer}`;
     console.log(`${name}: preparing a model-only project with a separate local preset baseline.`);
-    const project = await createSlicerProject({ ids, slicer: target.slicer as Slicer, printer: target.printer });
+    const project = await createSlicerProject({ ids, slicer: target.slicer as Slicer });
     const token = new URL(project.downloadUrl).searchParams.get('token')!;
     const publicInput = join(outputs, `${name}.3mf`), output = join(outputs, `${name}-roundtrip.3mf`);
     const publicBytes = Buffer.from(await (await downloadSlicerProject(token)).arrayBuffer());
