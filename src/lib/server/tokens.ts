@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { invariant } from './errors';
 
-export type Purpose = 'upload' | 'confirm' | 'slicer-export' | 'thumbnail';
+export type Purpose = 'upload' | 'confirm' | 'cancel' | 'slicer-export' | 'thumbnail';
 export const VERIFIED_EMAIL_COOKIE = 'printhive_verified_email';
 export const VERIFIED_EMAIL_TTL = 30 * 24 * 60 * 60 * 1000;
 
@@ -32,8 +32,8 @@ export function unseal(token: string, purpose: Purpose, now = Date.now()): { id:
     if (payload.v !== 1 || payload.purpose !== purpose || ids.length === 0 || ids.length > 10 || !ids.every(i => typeof i === 'string' && /^[a-f0-9-]{36}$/.test(i)) || !Number.isSafeInteger(payload.expires)) throw new Error();
     payload.id = ids[0];
     payload.ids = ids;
-  } catch { invariant(false, 400, 'This link is invalid. Please submit your print again.'); }
-  invariant(payload.expires > now, 410, 'This link has expired. Please submit your print again.');
+  } catch { invariant(false, 400, purpose === 'cancel' ? 'This cancellation link is invalid. Request a new link from the queue.' : 'This link is invalid. Please submit your print again.'); }
+  invariant(payload.expires > now, 410, purpose === 'cancel' ? 'This cancellation link has expired. Request a new link from the queue.' : 'This link has expired. Please submit your print again.');
   return payload;
 }
 

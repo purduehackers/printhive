@@ -15,6 +15,7 @@ export async function cleanup(now = Date.now()) {
     RETURNING storage_key`;
   for (const job of expired) await removeFile(job.storage_key);
   await sql`DELETE FROM sessions WHERE expires_at <= ${now}`;
+  await sql`DELETE FROM cancellation_requests WHERE expires_at <= ${now}`;
   await sql`DELETE FROM push_events WHERE expires_at <= ${now}`;
   const dir = join(config().dataDir, 'files');
   let orphans = 0;

@@ -2,6 +2,12 @@
 
 An Astro + React 3D printing queue running on Bun. SQLite is accessed through `Bun.SQL`; original STLs stay in a private directory on disk. The public queue lists printing and queued jobs, while operators can download files, manage statuses, and view history. Currently equipped with a Bambu H2D Pro and Prusa Core ONE+.
 
+## Canceling prints
+
+Use **Cancel prints** beside the Queued heading or at the bottom right of the queue, then click anywhere on a print's row to select it. Selected rows are highlighted; keyboard and screen reader selection remain available. The email form is available below the queue as soon as cancellation mode starts. A compact bottom bar offers **Select whole group** and **Continue to email**, which scrolls to the form and focuses its email field. As the form comes into view, the bar settles into its header. Scrolling back to change the selection preserves the form and email. Choose **Email cancellation link** to request confirmation. Prints stay queued until the submitter confirms by email. Operator-created groups do not affect cancellation selection.
+
+Links expire after one hour, work once, and apply only to the selected prints at their recorded versions. If any selected print starts printing or changes before confirmation, nothing is canceled with that link; return to the queue for a new link or contact an operator. Repeated email requests are limited per IP, submitter and submission. Canceled prints leave the public queue and remain in operator history. Migration `012_cancellation_requests.sql` stores pending requests; the existing cleanup command removes expired requests.
+
 ## Local development
 
 Requires Bun 1.4.2 or newer. All project commands use Bun; the container pins Bun 1.4.3 for the verified production SMTP setup. Database access serializes queries and complete transactions on the single SQLite connection, so concurrent queue updates and background notification delivery also work on Bun 1.4.2/1.4.3.

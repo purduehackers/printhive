@@ -4,7 +4,7 @@ import { effectiveGroupName, reference, type Job } from '../shared';
 import { logError } from './log';
 
 export interface Message { to: string; subject: string; text: string }
-export type Mailer = (message: Message, context?: { jobId: string; purpose: 'confirmation' | 'status' }) => Promise<void>;
+export type Mailer = (message: Message, context?: { jobId: string; purpose: 'confirmation' | 'cancellation' | 'status' }) => Promise<void>;
 export const sendMail: Mailer = async (message, context) => {
   const secure = process.env.SMTP_SECURE !== 'false';
   const port = Number(process.env.SMTP_PORT ?? (secure ? 465 : 1025));
@@ -44,6 +44,15 @@ export function confirmationMessage(job: Job | Job[], token: string): Message {
     text: `Your batch submission${groupLabel ? ` “${groupLabel}”` : ''} (${jobs.length} prints):\n${list}\n\nOpen this link, then press Confirm prints to join the queue:\n${config().origin}/confirm?token=${encodeURIComponent(token)}\n\nThis link expires in 24 hours. Your jobs are not queued until you confirm them.\n\nIf you did not request these prints, ignore this email.`,
   };
 }
+export function cancellationMessage(jobs: Job[], token: string): Message {
+  const list = jobs.map(job => `- ${job.title} (#${reference(job.id)})`).join('\n');
+  return {
+    to: jobs[0].email,
+    subject: `PrintHive · Confirm cancellation of ${jobs.length === 1 ? 'your print' : `${jobs.length} prints`}`,
+    text: `Confirm cancellation of these prints${jobs[0].batch_title ? ` from “${jobs[0].batch_title}”` : ''}:\n${list}\n\n${config().origin}/cancel?token=${encodeURIComponent(token)}\n\nThis link expires in 1 hour.\n\nIf you did not request this cancellation, ignore this email.`,
+  };
+}
+
 export function statusMessage(job: Job | Job[], feedback = ''): Message {
   const jobs = Array.isArray(job) ? job : [job];
   if (jobs.length === 1) {

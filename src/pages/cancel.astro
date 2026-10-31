@@ -1,0 +1,64 @@
+---
+import Layout from '../layouts/Layout.astro';
+import '../styles/queue-cancellation.css';
+import { cancellation } from '../lib/server/cancellations';
+import { smallBody } from '../lib/server/http';
+import { HttpError } from '../lib/server/errors';
+import { logFailure } from '../lib/server/log';
+import { thumbnailURL } from '../lib/server/thumbnails';
+import { reference, type Job } from '../lib/shared';
+
+let token = Astro.url.searchParams.get('token') ?? '', jobs: Job[] = [], already = false, error = '';
+const submitted = Astro.request.method === 'POST';
+try {
+  if (submitted) token = (await smallBody(Astro.request, false)).get('token') ?? '';
+  ({ jobs, already } = await cancellation(token, submitted));
+} catch (e) {
+  logFailure('cancellation.failed', e, { method: Astro.request.method });
+  error = e instanceof HttpError ? e.message : 'We could not cancel these prints. Please try again later.';
+  Astro.response.status = e instanceof HttpError ? e.status : 500;
+}
+---
+<Layout title="Cancel prints">
+  <section class="receipt">
+    <h1>{error ? 'Cancellation unavailable' : already ? 'Cancellation already confirmed' : submitted ? 'Cancellation confirmed' : 'Confirm cancellation'}</h1>
+    {error ? <p class="notice error">{error}</p> : <>
+      {jobs[0]?.batch_title && <h2>{jobs[0].batch_title}</h2>}
+      <ul class="batch-confirm-list cancel-preview-list">
+        {jobs.map(job => <li>
+          <div class="cancel-preview-artwork" aria-hidden="true">
+            <svg class="cancel-preview-placeholder" width="32" height="36" viewBox="0 0 32 36" fill="none">
+              <path d="M16 2 30 10v16L16 34 2 26V10L16 2Z M2 10l14 8 14-8 M16 18v16" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+            {Boolean(job.has_thumbnail) && <img class="cancel-preview-thumbnail" src={thumbnailURL(job.id)} width="64" height="64" alt="" loading="lazy" decoding="async" />}
+          </div>
+          <div class="cancel-preview-details">
+            <strong>{job.title}</strong>
+            <div class="cancel-preview-settings small muted">
+              <span>{job.material ?? 'PLA'} · {job.color}</span>
+              <span>{job.layer_height} mm layer</span>
+              <span>{job.infill}% infill</span>
+              {job.copies > 1 && <span>{job.copies} copies</span>}
+            </div>
+            <span class="batch-confirm-meta">
+              <span class={`status ${job.status}`}>{job.status}</span>
+              <span class="mono">#{reference(job.id)}</span>
+            </span>
+          </div>
+        </li>)}
+      </ul>
+      {!submitted && !already && <form method="post" action="/cancel">
+        <input type="hidden" name="token" value={token} />
+        <button class="button danger" type="submit">Confirm cancellation</button>
+      </form>}
+    </>}
+    <a href="/" class={submitted || already || error ? 'button primary' : 'text-button'}>View queue</a>
+  </section>
+</Layout>
+<script>
+  document.querySelectorAll<HTMLImageElement>('.cancel-preview-thumbnail').forEach(image => {
+    const hideMissing = () => { image.hidden = true; };
+    image.addEventListener('error', hideMissing, { once: true });
+    if (image.complete && !image.naturalWidth) hideMissing();
+  });
+</script>

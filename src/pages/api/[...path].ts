@@ -13,11 +13,18 @@ import { storeThumbnail, readThumbnail } from '../../lib/server/thumbnails';
 import { createSlicerProject, downloadSlicerProject } from '../../lib/server/slicer-export';
 import { operatorQueue } from '../../lib/server/jobs';
 import { pushStatus, subscribeDevice, revokeDevice, testDevice } from '../../lib/server/push';
+import { requestCancellation } from '../../lib/server/cancellations';
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
   try {
     if (path === 'queue' && method === 'GET') return json(await publicQueue());
+    if (path === 'cancellations' && method === 'POST') {
+      rateLimit('cancellation-ip:' + clientIP(context), 10, 15 * 60 * 1000);
+      const body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Select the prints to cancel.');
+      return json(await requestCancellation(body.ids, body.email));
+    }
     if (path === 'operator/queue' && method === 'GET') {
       await requireOperator(context);
       const query = new URL(request.url).searchParams;
