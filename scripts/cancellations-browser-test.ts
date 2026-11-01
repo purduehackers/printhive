@@ -97,6 +97,12 @@ try {
   await firstCheckbox.press('Space');
   await expect(firstCheckbox).toBeChecked();
   await expect(page.getByRole('checkbox', { name: /Select Other submission · base/ })).toBeDisabled();
+  await row('Robot arm · mount').click({ modifiers: ['Shift'], position: { x: 150, y: 28 } });
+  await expect(page.locator('.queue-cancel-checkbox:checked')).toHaveCount(3);
+  await row('Robot arm · grip').click({ modifiers: ['Control'], position: { x: 150, y: 28 } });
+  await expect(page.locator('.queue-cancel-checkbox:checked')).toHaveCount(2);
+  await row('Robot arm · mount').click({ modifiers: ['Meta'], position: { x: 150, y: 28 } });
+  await expect(page.locator('.queue-cancel-checkbox:checked')).toHaveCount(1);
   await row('Other submission · base').click({ position: { x: 150, y: 28 } });
   await expect(page.locator('.queue-cancel-checkbox:checked')).toHaveCount(1);
   await row('Other submission · mount').scrollIntoViewIfNeeded();

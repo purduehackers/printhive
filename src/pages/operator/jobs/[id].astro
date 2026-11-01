@@ -42,21 +42,20 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
             <div><dt>Material</dt><dd>{job.material ?? 'PLA'}</dd></div>
             <div><dt>Filament</dt><dd><i class={`swatch ${job.color.toLowerCase()}`} style={`background-color: ${resolveColor(job.color)};`} />{job.color}</dd></div>
             <div><dt>Infill</dt><dd>{job.infill}%</dd></div>
-            <div><dt>Number of walls</dt><dd>{job.walls}</dd></div>
+            <div><dt>Walls</dt><dd>{job.walls}</dd></div>
             <div><dt>Layer height</dt><dd>{job.layer_height} mm</dd></div>
             <div><dt>Supports</dt><dd>{supportLabel(job.supports)}</dd></div>
             <div><dt>Support angle</dt><dd>{job.support_angle == null ? 'Printer default' : `${job.support_angle}°`}</dd></div>
             <div><dt>Copies</dt><dd>{job.copies}</dd></div>
-            {groupLabel && <div><dt>Group / Batch</dt><dd>{groupLabel}</dd></div>}
+            {groupLabel && <div><dt>Group</dt><dd>{groupLabel}</dd></div>}
           </dl>
           <SlicerControls jobs={[job]} client:load />
-          <h3>Operator notes</h3>
-          <p class="operator-notes">{job.notes || 'No notes provided.'}</p>
+          {job.notes && <><h3>Operator notes</h3><p class="operator-notes">{job.notes}</p></>}
         </section>
         {groupJobs.length > 1 && (
           <section class="detail-card">
             <div class="section-heading">
-              <h2>Batch / Group prints ({groupJobs.length})</h2>
+              <h2>Group prints ({groupJobs.length})</h2>
               {groupSummary && <span class={`status ${groupSummary.status}`}>{groupSummary.label}</span>}
             </div>
             <ul class="batch-detail-list">

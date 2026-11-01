@@ -58,7 +58,7 @@ export default function OperatorManager({ initial, currentId }: { initial: Opera
           <fieldset disabled={busy}>
             <label>Username<input name="username" value={username} onChange={e => setUsername(e.target.value)} required pattern="[a-zA-Z0-9_.\-]{1,64}" maxLength={64} autoComplete="off" autoCapitalize="none" spellCheck={false} /></label>
             <label>{editing === null ? 'Password' : 'New password'}<input name="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required={editing === null} minLength={12} maxLength={1024} autoComplete="new-password" /></label>
-            <p className="small muted">{editing === null ? '12–1024 characters. All operators can manage prints and accounts.' : 'Leave the password blank to keep it. A password reset signs this operator out of all sessions.'}</p>
+            <p className="small muted">{editing === null ? 'At least 12 characters. Operators can manage accounts.' : 'Leave blank to keep the password. Changing it signs out all sessions.'}</p>
             <div className="operator-actions"><button type="submit" className="button primary">{busy ? 'Saving…' : editing === null ? 'Add operator' : 'Save changes'}</button>{editing !== null && <button type="button" className="text-button" onClick={reset}>Cancel</button>}</div>
           </fieldset>
         </form>

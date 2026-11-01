@@ -336,9 +336,6 @@ export default function MaterialManager({ initial }: { initial: Material[] }) {
                   <span className="mono small">{initialColorCode}</span>
                 </div>
               </label>
-              <p className="small muted">
-                Additional colours can be specified after creating the material.
-              </p>
               <div className="operator-actions">
                 <button type="submit" className="button primary">
                   {busy ? 'Saving…' : 'Add material'}

@@ -201,3 +201,6 @@ details[open] > summary .dropdown-chevron{transform:rotate(180deg)}
 .review-notes-block{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .review-notes-label{display:block;font-size:.7rem;color:var(--muted);margin-bottom:6px}
 .review-notes-block .operator-notes{margin:0}
+/* Native actions keep a visible button boundary, including quiet secondary actions. */
+button.text-button{padding:7px 11px;border:1px solid #abb2a0;border-radius:4px;background:#fcfcf9;text-decoration:none;line-height:1.25}
+button.text-button:hover:not(:disabled){background:#edf1e4;border-color:var(--green)}

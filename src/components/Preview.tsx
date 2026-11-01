@@ -884,7 +884,6 @@ export default function Preview({
           </span>
           <div>
             <strong>No supports needed</strong>
-            <p>None were generated for this orientation and these settings.</p>
           </div>
         </div>
       )}

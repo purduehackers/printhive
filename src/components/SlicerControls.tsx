@@ -63,7 +63,7 @@ export default function SlicerControls({ jobs }: { jobs: ExportJob[] }) {
     </form>
     {result && <div className="slicer-result" role="status">
       {expired ? <p>This project link has expired. Prepare it again.</p> : <>
-        <span className="small">Project ready · link expires in 15 minutes.</span>
+        <span className="small">Link expires in 15 minutes.</span>
         {result.launchUrl && <a className="button primary" href={result.launchUrl}>Open in {selected.name} ↗</a>}
         <a className={`button ${result.launchUrl ? 'secondary' : 'primary'}`} href={result.downloadUrl}>Download project ↓</a>
       </>}

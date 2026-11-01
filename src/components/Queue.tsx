@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import '../styles/queue-cancellation.css';
+import { selectListItem, type SelectionModifiers } from '../lib/list-selection';
 import {
   effectiveGroupName,
   reference,
@@ -39,6 +40,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
   const [emailFormInView, setEmailFormInView] = useState(false);
   const emailForm = useRef<HTMLDivElement>(null), emailInput = useRef<HTMLInputElement>(null);
   const receipt = useRef<HTMLParagraphElement>(null);
+  const selectionAnchor = useRef<string | null>(null);
   const focusEmail = () => {
     emailForm.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     emailInput.current?.focus({ preventScroll: true });
@@ -77,13 +79,17 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
   const selectedJob = jobs.find(job => selected.includes(job.id) && job.status === 'queued');
   const submissionKey = selectedJob ? selectedJob.batch_id ?? selectedJob.id : null;
   const submissionJobs = jobs.filter(job => job.status === 'queued' && (job.batch_id ?? job.id) === submissionKey);
-  const togglePrint = (job: PublicJob) => {
+  const togglePrint = (job: PublicJob, modifiers: SelectionModifiers = {}) => {
+    if (sending || (submissionKey && (job.batch_id ?? job.id) !== submissionKey)) return;
     setCancelError('');
-    setSelected(current => current.includes(job.id) ? current.filter(id => id !== job.id) : [...current, job.id]);
+    const eligible = jobs.filter(item => item.status === 'queued' && (item.batch_id ?? item.id) === (job.batch_id ?? job.id));
+    const next = selectListItem(eligible.map(item => item.id), new Set(selected), selectionAnchor.current, job.id, modifiers, true);
+    selectionAnchor.current = next.anchor;
+    setSelected([...next.selected]);
   };
   const startSelection = () => { setSelecting(true); setMessage(''); };
   const exitSelection = () => {
-    setSelecting(false); setSelected([]); setCancelError(''); setEmailFormInView(false);
+    setSelecting(false); setSelected([]); selectionAnchor.current = null; setCancelError(''); setEmailFormInView(false);
   };
   const sendCancellation = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,7 +171,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
               type="checkbox"
               checked={selected.includes(job.id)}
               disabled={sending || Boolean(submissionKey && (job.batch_id ?? job.id) !== submissionKey)}
-              onChange={() => togglePrint(job)}
+              onChange={event => togglePrint(job, event.nativeEvent as MouseEvent)}
             />}
             <span className="queue-position">{i + 1}</span>
             <div className="queue-job">
@@ -186,7 +192,9 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
               </div>
             </div>
             <span className="mono small muted">#{reference(job.id)}</span>
-            {selecting && <label className="queue-cancel-target" htmlFor={`cancel-${job.id}`}>
+            {selecting && <label className="queue-cancel-target" htmlFor={`cancel-${job.id}`}
+              onMouseDown={event => { if (event.shiftKey) event.preventDefault(); }}
+              onClick={event => { event.preventDefault(); togglePrint(job, event); }}>
               <span className="sr-only">Select {job.title} (#{reference(job.id)}) for cancellation</span>
             </label>}
           </li>
@@ -200,7 +208,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
           <div className="queue-selection-count">
             <span role="status">{emailFormInView ? `Cancel ${selected.length} ${selected.length === 1 ? 'print' : 'prints'}` : `${selected.length} selected`}</span>
             {selected.length > 0 && <button className="text-button" type="button" disabled={sending}
-              onClick={() => { setSelected([]); setCancelError(''); }} aria-label="Clear selection">Clear</button>}
+              onClick={() => { setSelected([]); selectionAnchor.current = null; setCancelError(''); }} aria-label="Clear selection">Clear</button>}
           </div>
           {selectedJob?.batch_id && <button className="text-button" type="button" disabled={sending}
             onClick={() => { setSelected(submissionJobs.map(job => job.id)); setCancelError(''); }}>Select whole group</button>}

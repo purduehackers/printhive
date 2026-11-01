@@ -80,11 +80,16 @@ try {
   await page.goto(h.origin + '/operator');
   await page.getByRole('checkbox', { name: 'Select Export bracket A', exact: true }).check();
   await page.getByRole('checkbox', { name: 'Select Export bracket B', exact: true }).check();
+  await page.getByRole('button', { name: 'Open in slicer', exact: true }).click();
   await expect(controls.getByRole('combobox', { name: 'Open with', exact: true })).toHaveValue('orca');
   await expect(controls.getByRole('combobox')).toHaveCount(1);
   await controls.getByRole('button', { name: 'Prepare project' }).click();
   await expect(controls.getByRole('link', { name: 'Open in OrcaSlicer' })).toBeVisible();
   const batchUrl = await controls.getByRole('link', { name: 'Download project' }).getAttribute('href');
+  await page.getByRole('button', { name: 'Change status', exact: true }).click();
+  await expect(controls).toBeHidden();
+  await page.getByRole('button', { name: 'Open in slicer', exact: true }).click();
+  await expect(controls.getByRole('link', { name: 'Download project' })).toHaveAttribute('href', batchUrl!);
   const batch = projectEntries(Buffer.from(await (await fetch(batchUrl!)).arrayBuffer()));
   assert.equal((batch.get('3D/3dmodel.model')!.match(/<object /g) ?? []).length, 2);
   assert.match(batch.get('Metadata/model_settings.config')!, /value="0.12"/);

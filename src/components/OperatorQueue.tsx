@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef, type SubmitEvent } from 'react';
 import SlicerControls from './SlicerControls';
+import PrintStatusSelect from './PrintStatusSelect';
+import '../styles/operator-selection.css';
 import {
   effectiveGroupName,
   reference,
   resolveColor,
-  sortJobs,
   summarizeGroupStatus,
+  STATUSES,
+  transitions,
   type Job,
-  type SortOption,
   type Status,
 } from '../lib/shared';
+import { operatorGroups, type OperatorGroupBy, type OperatorSortBy } from '../lib/operator-queue-view';
+import { selectListItem, type SelectionModifiers } from '../lib/list-selection';
 
 interface OperatorQueueProps {
   initialJobs: Job[];
@@ -18,17 +22,15 @@ interface OperatorQueueProps {
   revision?: string;
 }
 
-type GroupByOption = 'none' | 'custom' | 'batch' | 'material-color' | 'status' | 'submitter';
-
 const STORAGE_KEY = 'printhive_operator_custom_groups';
 
 export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, revision = '' }: OperatorQueueProps) {
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
-  const [sortBy, setSortBy] = useState<SortOption>('queue');
+  const [groupBy, setGroupBy] = useState<OperatorGroupBy>('none');
+  const [sortBy, setSortBy] = useState<OperatorSortBy>('queue'), [reverseSort, setReverseSort] = useState(false);
   const [customGroups, setCustomGroups] = useState<Record<string, string[]>>({});
-  const [isGroupingModalOpen, setGroupingModalOpen] = useState(false);
+  const [activeAction, setActiveAction] = useState<'slicer' | 'group' | 'status' | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const [batchStatus, setBatchStatus] = useState<Status | ''>('');
   const [feedback, setFeedback] = useState('');
@@ -67,6 +69,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
   }, [filter, page, revision, initialJobs]);
 
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const selectionAnchor = useRef<string | null>(null);
 
   // Load custom groups from localStorage
   useEffect(() => {
@@ -105,12 +108,12 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
     jobs.filter(j => getJobGroupName(j) === groupName).map(j => j.id);
 
   // Selection helpers
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: string, modifiers: SelectionModifiers = {}, toggle = true) => {
+    if (busy) return;
     setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+      const next = selectListItem(visibleIds, prev, selectionAnchor.current, id, modifiers, toggle);
+      selectionAnchor.current = next.anchor;
+      return next.selected;
     });
   };
 
@@ -127,13 +130,15 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
   };
 
   const clearSelection = () => {
+    selectionAnchor.current = null;
     setSelectedIds(new Set());
     setBatchStatus('');
     setFeedback('');
-    setGroupingModalOpen(false);
+    setActiveAction(null);
   };
 
   const selectGroup = (groupJobIds: string[]) => {
+    if (busy) return;
     const allSelected = groupJobIds.length > 0 && groupJobIds.every(id => selectedIds.has(id));
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -146,9 +151,6 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
     });
   };
 
-  const openGroupStatus = (groupJobIds: string[]) => {
-    setSelectedIds(new Set(groupJobIds));
-  };
 
   const downloadJobFiles = (jobIds: string[]) => {
     jobIds.forEach((id, idx) => {
@@ -194,7 +196,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
     updated[trimmed] = Array.from(new Set([...(updated[trimmed] || []), ...idsToAdd]));
     saveCustomGroups(updated);
     setNewGroupName('');
-    setGroupingModalOpen(false);
+    setActiveAction(null);
     setGroupBy('custom');
     setNotice({
       type: 'success',
@@ -242,18 +244,12 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
     }).catch(() => {});
   };
 
-  // Batch status update submission
-  const handleBatchSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!batchStatus || selectedIds.size === 0) return;
-
-    const selectedJobs = jobs.filter(j => selectedIds.has(j.id));
-    if (!selectedJobs.length) return;
-
-    const returning = batchStatus === 'rejected';
-    if (returning && !feedback.trim()) {
+  const updateJobStatuses = async (targetJobs: Job[], next: Status, returnFeedback = '', clearAfter = false) => {
+    if (busy || !targetJobs.length) return false;
+    const returning = next === 'rejected';
+    if (returning && !returnFeedback.trim()) {
       setNotice({ type: 'error', message: 'Provide feedback before rejecting and returning prints.' });
-      return;
+      return false;
     }
 
     setBusy(true);
@@ -264,9 +260,9 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: selectedJobs.map(j => ({ id: j.id, version: j.version })),
-          status: batchStatus,
-          feedback: returning ? feedback.trim() : '',
+          items: targetJobs.map(j => ({ id: j.id, version: j.version })),
+          status: next,
+          feedback: returning ? returnFeedback.trim() : '',
         }),
       });
 
@@ -303,174 +299,39 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
       } else {
         setNotice({
           type: 'success',
-          message: `Successfully updated status to "${batchStatus}" for ${updatedCount} print(s).`,
+          message: `Updated ${updatedCount} ${updatedCount === 1 ? 'print' : 'prints'} to ${next}.`,
         });
       }
 
-      clearSelection();
+      if (clearAfter) clearSelection();
+      return errorCount === 0;
     } catch (err: any) {
       setNotice({
         type: 'error',
         message: err.message || 'An error occurred while updating status.',
       });
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
-  const sortedJobs = sortJobs(jobs, sortBy, getJobGroupName);
-
-  // Collect all active group names for quick assignment
-  const existingGroupNames = Array.from(
-    new Set(
-      jobs
-        .map(j => getJobGroupName(j))
-        .filter((name): name is string => Boolean(name)),
-    ),
-  );
-
-  // Group definitions
-  type GroupBucket = {
-    key: string;
-    title: string;
-    colorSwatch?: string;
-    jobs: Job[];
-    isCustom?: boolean;
-    customGroupName?: string;
-    isBatch?: boolean;
+  const handleBatchSubmit = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!batchStatus || !availableStatuses.includes(batchStatus)) return;
+    await updateJobStatuses(selectedJobs, batchStatus, feedback, true);
   };
 
-  const getGroupedData = (): GroupBucket[] => {
-    if (groupBy === 'material-color') {
-      const map = new Map<string, Job[]>();
-      for (const job of sortedJobs) {
-        const key = `${job.material ?? 'PLA'} · ${job.color}`;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(job);
-      }
-      return Array.from(map.entries()).map(([key, groupJobs]) => ({
-        key,
-        title: key,
-        colorSwatch: groupJobs[0]?.color,
-        jobs: groupJobs,
-      }));
-    }
+  const statusTargets = (job: Job) => selectedIds.has(job.id) && selectedJobs.every(item => item.status === job.status)
+    ? selectedJobs : [job];
 
-    if (groupBy === 'custom') {
-      const buckets: GroupBucket[] = [];
-      const map = new Map<string, Job[]>();
-      const ungroupedJobs: Job[] = [];
-
-      for (const job of sortedJobs) {
-        const groupName = getJobGroupName(job);
-        if (groupName) {
-          if (!map.has(groupName)) map.set(groupName, []);
-          map.get(groupName)!.push(job);
-        } else {
-          ungroupedJobs.push(job);
-        }
-      }
-
-      for (const [groupName, groupJobs] of map.entries()) {
-        const isBatch = groupJobs.every(j => Boolean(j.batch_id) && j.batch_id === groupJobs[0].batch_id);
-        buckets.push({
-          key: `custom_${groupName}`,
-          title: groupName,
-          jobs: groupJobs,
-          isCustom: true,
-          customGroupName: groupName,
-          isBatch,
-        });
-      }
-
-      if (ungroupedJobs.length > 0) {
-        buckets.push({
-          key: 'custom_ungrouped',
-          title: 'Ungrouped',
-          jobs: ungroupedJobs,
-        });
-      }
-
-      return buckets;
-    }
-
-    if (groupBy === 'batch') {
-      const buckets: GroupBucket[] = [];
-      const map = new Map<string, Job[]>();
-      const singleJobs: Job[] = [];
-
-      for (const job of sortedJobs) {
-        if (job.batch_id) {
-          if (!map.has(job.batch_id)) map.set(job.batch_id, []);
-          map.get(job.batch_id)!.push(job);
-        } else {
-          singleJobs.push(job);
-        }
-      }
-
-      for (const [batchId, batchJobs] of map.entries()) {
-        const label = batchJobs[0]?.batch_title || getJobGroupName(batchJobs[0]) || `Batch #${reference(batchId)}`;
-        buckets.push({
-          key: `batch_${batchId}`,
-          title: label,
-          jobs: batchJobs,
-          isBatch: true,
-          isCustom: Boolean(getJobGroupName(batchJobs[0])),
-          customGroupName: getJobGroupName(batchJobs[0]) ?? undefined,
-        });
-      }
-
-      if (singleJobs.length > 0) {
-        buckets.push({
-          key: 'batch_single',
-          title: 'Individual Submissions',
-          jobs: singleJobs,
-        });
-      }
-
-      return buckets;
-    }
-
-    if (groupBy === 'status') {
-      const map = new Map<string, Job[]>();
-      for (const job of sortedJobs) {
-        const key = job.status;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(job);
-      }
-      return Array.from(map.entries()).map(([key, groupJobs]) => ({
-        key,
-        title: key.toUpperCase(),
-        jobs: groupJobs,
-      }));
-    }
-
-    if (groupBy === 'submitter') {
-      const map = new Map<string, Job[]>();
-      for (const job of sortedJobs) {
-        const key = job.email;
-        if (!map.has(key)) map.set(key, []);
-        map.get(key)!.push(job);
-      }
-      return Array.from(map.entries()).map(([key, groupJobs]) => ({
-        key: `submitter_${key}`,
-        title: key,
-        jobs: groupJobs,
-      }));
-    }
-
-    // Default flat list
-    return [{
-      key: 'all',
-      title: 'All Prints',
-      jobs: sortedJobs,
-    }];
-  };
-
-  const groups = getGroupedData();
+  const existingGroupNames = [...new Set(jobs.map(getJobGroupName).filter((name): name is string => Boolean(name)))];
+  const groups = operatorGroups(jobs, groupBy, sortBy, reverseSort, getJobGroupName);
+  const visibleIds = groups.flatMap(group => group.jobs.map(job => job.id));
   const allSelected = jobs.length > 0 && selectedIds.size === jobs.length;
-  const selectedJobsList = jobs.filter(j => selectedIds.has(j.id));
-  const recipientCount = new Set(selectedJobsList.map(j => j.email.toLowerCase())).size;
+  const selectedJobs = jobs.filter(job => selectedIds.has(job.id));
+  const availableStatuses = STATUSES.filter(status => selectedJobs.every(job =>
+    job.status === status || transitions[job.status as Status]?.includes(status)));
 
   return (
     <div>
@@ -487,69 +348,114 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
         </div>
       )}
 
-      {/* Batch / Group Status Update Panel */}
+      {/* Toolbar above table */}
+      <div className="operator-queue-bar">
+        <div className="queue-view-controls">
+          <div className="group-view-select">
+            <label htmlFor="group-by-select">Group by:</label>
+            <select
+              id="group-by-select"
+              value={groupBy}
+              onChange={e => setGroupBy(e.target.value as OperatorGroupBy)}
+            >
+              <option value="none">None</option>
+              <option value="custom">Named groups</option>
+              <option value="batch">Submission</option>
+              <option value="material-color">Filament</option>
+              <option value="submitter">Submitter</option>
+            </select>
+          </div>
+          <div className="group-view-select">
+            <label htmlFor="sort-by-select">Sort by:</label>
+            <select
+              id="sort-by-select"
+              value={sortBy}
+              onChange={e => { setSortBy(e.target.value as OperatorSortBy); setReverseSort(false); }}
+            >
+              <option value="queue">Queue order</option>
+              <option value="newest">Submission date</option>
+              <option value="title">Print name</option>
+              <option value="copies">Copies</option>
+            </select>
+          </div>
+          {sortBy !== 'queue' && <button type="button" className="button secondary sort-direction"
+            aria-label="Reverse sort order" onClick={() => setReverseSort(value => !value)}>
+            <span aria-hidden="true">{reverseSort ? '↑' : '↓'}</span>
+            {sortBy === 'title' ? reverseSort ? 'Z–A' : 'A–Z'
+              : sortBy === 'newest' ? reverseSort ? 'Oldest first' : 'Newest first'
+                : reverseSort ? 'Fewest first' : 'Most first'}
+          </button>}
+          {selectedIds.size === 0 && <div className="selection-actions">
+            <button type="button" className="text-button" onClick={selectAllInView}>Select all in view</button>
+          </div>}
+        </div>
+      </div>
+
+      {/* Actions for selected prints */}
       {selectedIds.size > 0 && (
-        <div className="batch-update-panel" role="region" aria-label="Group status actions">
-          <div className="batch-update-header">
-            <div>
-              <h3>
-                <strong>{selectedIds.size}</strong> print{selectedIds.size === 1 ? '' : 's'} selected
-              </h3>
-              <p className="small muted">
-                Update status for all selected prints together ({recipientCount} notification email{recipientCount === 1 ? '' : 's'} will be sent).
-              </p>
-            </div>
-            <div className="selection-actions">
+        <div className="batch-update-panel operator-selection-panel" role="region" aria-label="Selected print actions">
+          <div className="operator-selection-toolbar">
+            <h3>
+              <strong>{selectedIds.size}</strong> print{selectedIds.size === 1 ? '' : 's'} selected
+            </h3>
+            <div className="operator-selection-operations" role="group" aria-label="File operations">
               <button
                 type="button"
                 className="button secondary"
                 onClick={() => downloadJobFiles(Array.from(selectedIds))}
                 disabled={busy}
               >
-                Download selected STLs ↓
+                Download STLs
               </button>
+              <button type="button" className="button secondary" disabled={busy}
+                aria-expanded={activeAction === 'slicer'} aria-controls="selection-slicer-panel"
+                onClick={() => setActiveAction(current => current === 'slicer' ? null : 'slicer')}>Open in slicer</button>
               <button
                 type="button"
                 className="button secondary"
-                onClick={() => setGroupingModalOpen(prev => !prev)}
+                onClick={() => setActiveAction(current => current === 'group' ? null : 'group')}
                 disabled={busy}
+                aria-expanded={activeAction === 'group'}
+                aria-controls="selection-group-panel"
               >
-                {isGroupingModalOpen ? 'Cancel group' : 'Group selected'}
+                Group selected
               </button>
-              <button
-                type="button"
-                className="text-button"
-                onClick={clearSelection}
-                disabled={busy}
-              >
-                Clear selection
-              </button>
+              <button type="button" className="button secondary" disabled={busy}
+                aria-expanded={activeAction === 'status'} aria-controls="selection-status-panel"
+                onClick={() => setActiveAction(current => current === 'status' ? null : 'status')}>Change status</button>
             </div>
+            <button type="button" className="button secondary operator-selection-clear" onClick={clearSelection} disabled={busy}>Clear selection</button>
           </div>
 
-          <SlicerControls jobs={jobs.filter(job => selectedIds.has(job.id))} />
+          <div id="selection-slicer-panel" className="operator-selection-details" hidden={activeAction !== 'slicer'}>
+            <SlicerControls jobs={jobs.filter(job => selectedIds.has(job.id))} />
+          </div>
 
           {/* Group Creation Inline Form */}
-          {isGroupingModalOpen && (
-            <div className="group-create-card">
-              <h4>Create or assign custom group</h4>
-              <p className="small muted">Group these {selectedIds.size} print(s) under a shared name (e.g. Bed 1, Batch A).</p>
+          {activeAction === 'group' && (
+            <div id="selection-group-panel" className="group-create-card operator-selection-details">
               <form onSubmit={handleCreateGroup} className="group-create-form">
-                <input
-                  type="text"
-                  placeholder="Group name (e.g. Bed 1)"
-                  value={newGroupName}
-                  onChange={e => setNewGroupName(e.target.value)}
-                  maxLength={200}
-                  required
-                  autoFocus
-                />
-                <button type="submit" className="button primary">Save group</button>
-                <button type="button" className="button secondary" onClick={() => setGroupingModalOpen(false)}>Cancel</button>
+                <label className="operator-operation-field">
+                  Group name
+                  <input
+                    type="text"
+                    placeholder="Group name"
+                    aria-label="Group name"
+                    value={newGroupName}
+                    onChange={e => setNewGroupName(e.target.value)}
+                    maxLength={200}
+                    required
+                    autoFocus
+                  />
+                </label>
+                <div className="operator-operation-submit">
+                  <button type="submit" className="button primary">Save group</button>
+                  <button type="button" className="button secondary" onClick={() => setActiveAction(null)}>Cancel</button>
+                </div>
               </form>
               {existingGroupNames.length > 0 && (
                 <div className="existing-groups-row">
-                  <span className="small muted">Add to existing group:</span>
+                  <span className="small muted">Existing groups:</span>
                   {existingGroupNames.map(name => (
                     <button
                       key={name}
@@ -566,29 +472,29 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
           )}
 
           {/* Status Update Form */}
-          <form onSubmit={handleBatchSubmit} className="batch-update-form">
+          {activeAction === 'status' && <form id="selection-status-panel" onSubmit={handleBatchSubmit} className="batch-update-form operator-selection-details">
             <div className="batch-update-row">
-              <label htmlFor="batch-status-select" className="sr-only">New status for selected prints</label>
+              <label className="operator-operation-field" htmlFor="batch-status-select">Status
               <select
                 id="batch-status-select"
-                value={batchStatus}
+                aria-label="New status for selected prints"
+                value={batchStatus && availableStatuses.includes(batchStatus) ? batchStatus : ''}
                 onChange={e => setBatchStatus(e.target.value as Status)}
                 disabled={busy}
               >
-                <option value="">Select new status…</option>
-                <option value="printing">Mark as Printing</option>
-                <option value="completed">Mark as Completed</option>
-                <option value="failed">Mark as Failed</option>
-                <option value="canceled">Mark as Canceled</option>
-                <option value="rejected">Reject and return with feedback</option>
-                <option value="queued">Requeue at the end of the line</option>
+                <option value="">{availableStatuses.length ? 'Select new status…' : 'No common status change'}</option>
+                {availableStatuses.map(status => <option key={status} value={status}>
+                  {status === 'rejected' ? 'Reject and return with feedback' : status === 'queued' ? 'Requeue at the end of the line'
+                    : `Mark as ${status[0].toUpperCase() + status.slice(1)}`}
+                </option>)}
               </select>
+              </label>
               <button
                 type="submit"
                 className="button primary"
-                disabled={busy || !batchStatus || (batchStatus === 'rejected' && !feedback.trim())}
+                disabled={busy || !batchStatus || !availableStatuses.includes(batchStatus) || (batchStatus === 'rejected' && !feedback.trim())}
               >
-                {busy ? 'Updating status…' : `Update status for ${selectedIds.size} print(s)`}
+                {busy ? 'Updating…' : 'Update status'}
               </button>
             </div>
             {batchStatus === 'rejected' && (
@@ -603,61 +509,14 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                   required
                   maxLength={5000}
                   rows={3}
-                  placeholder="Explain why these prints are being returned (will be emailed to submitters so they can submit a revised STL)..."
+                  placeholder="Reason for return"
                   disabled={busy}
                 />
               </div>
             )}
-          </form>
+          </form>}
         </div>
       )}
-
-      {/* Toolbar above table */}
-      <div className="operator-queue-bar">
-        <div className="queue-view-controls">
-          <div className="group-view-select">
-            <label htmlFor="group-by-select">Group by:</label>
-            <select
-              id="group-by-select"
-              value={groupBy}
-              onChange={e => setGroupBy(e.target.value as GroupByOption)}
-            >
-              <option value="none">None (flat list)</option>
-              <option value="custom">Custom &amp; Batch Groups</option>
-              <option value="batch">Batch Submissions</option>
-              <option value="material-color">Material &amp; Colour</option>
-              <option value="status">Status</option>
-              <option value="submitter">Submitter</option>
-            </select>
-          </div>
-          <div className="group-view-select">
-            <label htmlFor="sort-by-select">Sort by:</label>
-            <select
-              id="sort-by-select"
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortOption)}
-            >
-              <option value="queue">Queue order</option>
-              <option value="group">Group / Batch</option>
-              <option value="status">Status</option>
-              <option value="material-color">Material &amp; Colour</option>
-              <option value="submitter">Submitter</option>
-              <option value="title">Title (A–Z)</option>
-              <option value="newest">Newest first</option>
-            </select>
-          </div>
-        </div>
-        <div className="selection-actions">
-          {selectedIds.size > 0 ? (
-            <>
-              <span className="small muted"><strong>{selectedIds.size}</strong> selected</span>
-              <button type="button" className="text-button" onClick={clearSelection}>Clear selection</button>
-            </>
-          ) : (
-            <button type="button" className="text-button" onClick={selectAllInView}>Select all in view</button>
-          )}
-        </div>
-      </div>
 
       {/* Table */}
       <div className="table-wrap">
@@ -669,15 +528,15 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                   type="checkbox"
                   checked={allSelected}
                   ref={headerCheckboxRef}
+                  disabled={busy}
                   onChange={toggleSelectAll}
                   aria-label="Select all prints"
                 />
               </th>
-              <th>Print</th>
+              <th className="print-column-heading">Print</th>
               <th>Submitter</th>
               <th>Settings</th>
               <th>Status</th>
-              <th><span className="sr-only">Action</span></th>
             </tr>
           </thead>
           {groups.map(group => {
@@ -690,9 +549,13 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
               <tbody key={group.key}>
                 {showGroupHeader && (
                   <tr className="group-header-row">
-                    <td colSpan={6}>
+                    <td colSpan={5}>
                       <div className="group-section-header">
                         <div className="group-title-info">
+                          <label className="operator-group-selection">
+                            <input type="checkbox" checked={allGroupSelected} disabled={busy}
+                              ref={input => { if (input) input.indeterminate = !allGroupSelected && groupJobIds.some(id => selectedIds.has(id)); }}
+                              onChange={() => selectGroup(groupJobIds)} aria-label={`Select group ${group.title}`} />
                           {group.colorSwatch && (
                             <i
                               className={`swatch ${group.colorSwatch.toLowerCase()}`}
@@ -700,6 +563,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                             />
                           )}
                           <span>{group.title}</span>
+                          </label>
                           {group.isBatch && <span className="batch-origin-tag">Batch</span>}
                           <span className="muted small">
                             ({group.jobs.length} {group.jobs.length === 1 ? 'print' : 'prints'})
@@ -709,31 +573,11 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                           </span>
                         </div>
                         <div className="group-actions">
-                          <button
-                            type="button"
-                            className="button secondary"
-                            onClick={() => downloadJobFiles(groupJobIds)}
-                          >
-                            Download group STLs ↓
-                          </button>
-                          <button
-                            type="button"
-                            className="button secondary"
-                            onClick={() => selectGroup(groupJobIds)}
-                          >
-                            {allGroupSelected ? 'Deselect group' : 'Select group'}
-                          </button>
-                          <button
-                            type="button"
-                            className="button secondary"
-                            onClick={() => openGroupStatus(groupJobIds)}
-                          >
-                            Update group status
-                          </button>
                           {group.isCustom && group.customGroupName && (
                             <button
                               type="button"
                               className="text-button remove-operator"
+                              disabled={busy}
                               onClick={() => ungroup(group.customGroupName!)}
                             >
                               Ungroup
@@ -747,15 +591,20 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                 {group.jobs.map(job => {
                   const isSelected = selectedIds.has(job.id);
                   const jobGroupName = getJobGroupName(job);
-                  const groupMemberIds = jobGroupName ? getGroupJobIds(jobGroupName) : [];
 
                   return (
-                    <tr key={job.id} className={isSelected ? 'selected-row' : ''}>
+                    <tr key={job.id} className={`operator-print-row${isSelected ? ' selected-row' : ''}`}
+                      onMouseDown={event => { if (event.shiftKey) event.preventDefault(); }}
+                      onClick={event => {
+                        if (!(event.target as HTMLElement).closest('a, button, input, select, textarea, label')) toggleSelect(job.id, event, false);
+                      }}>
                       <td className="selection-cell">
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => toggleSelect(job.id)}
+                          disabled={busy}
+                          onClick={event => event.stopPropagation()}
+                          onChange={event => toggleSelect(job.id, event.nativeEvent as MouseEvent)}
                           aria-label={`Select ${job.title}`}
                         />
                       </td>
@@ -765,19 +614,12 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                             {Boolean(job.has_thumbnail) && <img className="operator-print-thumbnail" src={`/api/print-thumbnails/${job.id}`} width={36} height={36} alt="" loading="lazy" decoding="async" onError={event => { event.currentTarget.hidden = true; }} />}
                           </span>
                           <div className="operator-print-details">
-                            <a className="job-title" href={`/operator/jobs/${job.id}`}>{job.title}</a>
+                            <a className="job-title" href={`/operator/jobs/${job.id}`} onClick={event => {
+                              if (event.shiftKey || event.ctrlKey || event.metaKey) { event.preventDefault(); toggleSelect(job.id, event, false); }
+                            }}>{job.title}</a>
                             <span className="mono small muted">#{reference(job.id)}</span>
                             {jobGroupName && (
-                              <button
-                                type="button"
-                                className="group-badge group-badge-button"
-                                onClick={() => selectGroup(groupMemberIds)}
-                                aria-label={`Select group ${jobGroupName}`}
-                                title={`Click to select all ${groupMemberIds.length} print(s) in "${jobGroupName}"`}
-                              >
-                                {jobGroupName}
-                                {groupMemberIds.length > 1 ? ` (${groupMemberIds.length})` : ''}
-                              </button>
+                              <span className="group-badge">{jobGroupName}</span>
                             )}
                           </div>
                         </div>
@@ -787,8 +629,8 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
                         {job.material ?? 'PLA'} · {job.color} · {job.copies}×<br />
                         <span className="muted small">{job.layer_height} mm · {job.infill}% · {job.walls} walls</span>
                       </td>
-                      <td><span className={`status ${job.status}`}>{job.status}</span></td>
-                      <td><a href={`/operator/jobs/${job.id}`} aria-label={`Manage ${job.title}`}>Manage →</a></td>
+                      <td><PrintStatusSelect title={job.title} status={job.status as Status} count={statusTargets(job).length} busy={busy}
+                        onChange={(next, returnFeedback) => updateJobStatuses(statusTargets(job), next, returnFeedback)} /></td>
                     </tr>
                   );
                 })}
@@ -796,7 +638,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
             );
           })}
         </table>
-        {!jobs.length && <div className="empty-state">No confirmed prints in this view.</div>}
+        {!jobs.length && <div className="empty-state">No prints in this view.</div>}
       </div>
     </div>
   );

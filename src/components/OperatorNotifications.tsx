@@ -152,9 +152,11 @@ export default function OperatorNotifications() {
   return <section className="operator-notifications" aria-labelledby="notifications-heading">
     <div>
       <h2 id="notifications-heading">Print alerts</h2>
-      {settings && !settings.configured && <p className="small">Notifications aren’t configured.</p>}
-      {settings && !supported && <p className="small">Notifications are unavailable in this browser or connection.</p>}
-      {supported && permission === 'denied' && <p className="small">Notifications are blocked. Allow them in your browser settings.</p>}
+      {settings && (!settings.configured
+        ? <p className="small">Notifications aren’t configured.</p>
+        : !supported
+          ? <p className="small">Notifications are unavailable in this browser or connection.</p>
+          : permission === 'denied' && <p className="small">Notifications are blocked. Allow them in your browser settings.</p>)}
       {message && <p className={`small ${error ? 'notification-error' : ''}`} role={error ? 'alert' : 'status'}>{message}</p>}
     </div>
     <div className="notification-actions">

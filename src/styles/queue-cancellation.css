@@ -47,3 +47,5 @@
 @media(max-width:640px){.queue-cancellation form{padding:0 14px 14px}.queue-cancellation input[type=email]{font-size:1rem}.queue-cancel-submit{gap:10px}.queue-cancel-submit>.button{width:auto;max-width:138px;padding:10px 12px;font-size:.75rem}.queue-selection-bar{padding:10px 14px;gap:8px}.queue-continue-action>.button{padding:9px 10px;font-size:.75rem}}
 @media(max-width:380px){.queue-selection-bar{flex-wrap:wrap}.queue-selection-summary{flex-basis:calc(100% - 40px)}.queue-continue-action{order:2}.queue-selection-exit{margin-left:auto}.queue-selection-bar.is-docked .queue-continue-action{display:none}}
 @media(prefers-reduced-motion:reduce){.queue-selection-bar,.queue-continue-action,.queue-selection-bar.is-docked .queue-continue-action{transition:none}}
+.queue-selection-summary button.text-button{padding:6px 10px}
+.queue-selection-exit{border:1px solid #abb2a0;background:#fcfcf9}

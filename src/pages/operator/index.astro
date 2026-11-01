@@ -45,11 +45,10 @@ const { jobs, filter, page, hasNext, revision } = await operatorQueue(Astro.url.
       <table class="operator-queue-table">
         <thead>
           <tr>
-            <th>Print</th>
+            <th class="print-column-heading">Print</th>
             <th>Submitter</th>
             <th>Settings</th>
             <th>Status</th>
-            <th><span class="sr-only">Action</span></th>
           </tr>
         </thead>
         <tbody>
@@ -73,12 +72,11 @@ const { jobs, filter, page, hasNext, revision } = await operatorQueue(Astro.url.
                 <span class="muted small">{job.layer_height} mm · {job.infill}% · {job.walls} walls</span>
               </td>
               <td><span class={`status ${job.status}`}>{job.status}</span></td>
-              <td><a href={`/operator/jobs/${job.id}`} aria-label={`Manage ${job.title}`}>Manage →</a></td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!jobs.length && <div class="empty-state">No confirmed prints in this view.</div>}
+      {!jobs.length && <div class="empty-state">No prints in this view.</div>}
     </div>
   </noscript>
 

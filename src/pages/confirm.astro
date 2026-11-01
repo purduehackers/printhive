@@ -60,7 +60,7 @@ const batchSummary = isBatch && (submitted || already)
             </li>
           ))}
         </ul>
-        <p>{already ? `These prints have already been confirmed${batchSummary ? ` (${batchSummary.label})` : ''}.` : submitted ? 'Your prints are grouped and queued. We’ll email you when an operator changes their status.' : 'Press the button below to confirm your batch and join the queue.'}</p>
+        {submitted && !already && <p>We’ll email you when the status changes.</p>}
         {!submitted && !already && (
           <form method="post" action="/confirm">
             <input type="hidden" name="token" value={token} />
@@ -72,7 +72,7 @@ const batchSummary = isBatch && (submitted || already)
       <>
         <h2>{job?.title}</h2>
         <p class="mono">#{job && reference(job.id)}</p>
-        <p>{already ? `This print has already been confirmed. Its current status is ${job?.status}.` : submitted ? 'Your print is queued. We’ll email you when the operator changes its status.' : 'Press the button below to confirm your print and join the queue.'}</p>
+        {already ? <p>Current status: {job?.status}.</p> : submitted && <p>We’ll email you when the status changes.</p>}
         {!submitted && !already && (
           <form method="post" action="/confirm">
             <input type="hidden" name="token" value={token} />

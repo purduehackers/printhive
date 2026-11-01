@@ -631,13 +631,7 @@ export default function SubmissionForm({
       <section className="receipt">
         <h2>{files.length > 1 ? 'Prints queued' : 'Print queued'}</h2>
         <p>
-          {files.length > 1
-            ? `Your ${files.length} prints are grouped and queued. We’ll email `
-            : 'Your print is queued. We’ll email '}
-          <strong>{email}</strong>{' '}
-          {files.length > 1
-            ? 'when an operator changes their status.'
-            : 'when the operator changes its status.'}
+          We’ll email <strong>{email}</strong> with status updates.
         </p>
         <a href="/" className="button primary">
           Back to queue
@@ -653,20 +647,10 @@ export default function SubmissionForm({
           We sent a confirmation link to <strong>{email}</strong>.
         </p>
         <p>
-          Open it and press{' '}
-          <strong>
-            {files.length > 1
-              ? `Confirm ${files.length} prints`
-              : 'Confirm print'}
-          </strong>{' '}
-          within 24 hours.{' '}
-          {files.length > 1
-            ? `Your ${files.length} prints will join the queue after you confirm.`
-            : 'Your print will join the queue after you confirm.'}
+          Confirm within 24 hours to join the queue.
         </p>
         <p className="small muted">
-          If it hasn’t arrived, check your spam folder. Email delivery can take
-          a few minutes.
+          Allow a few minutes for delivery and check your spam folder.
         </p>
         <a href="/" className="button primary">
           Back to queue
@@ -686,7 +670,7 @@ export default function SubmissionForm({
           <section className="review-panel" aria-label="Review submission">
             <div className="review-header">
               <div>
-                <p className="eyebrow">Step 2 of 2 · Review before submitting</p>
+                <p className="eyebrow">Step 2 of 2</p>
                 <h2>
                   {files.length > 1
                     ? `Review your ${files.length} prints`
@@ -705,14 +689,6 @@ export default function SubmissionForm({
                 Edit settings
               </button>
             </div>
-            <p className="small muted review-intro">
-              Verify that your part settings, 3D orientation, and contact
-              details are correct before{' '}
-              {isEmailVerified
-                ? 'committing to the print queue.'
-                : 'sending your confirmation email.'}
-            </p>
-
             <div className="detail-card review-card">
               <h3>Submission details</h3>
               <dl className="settings-grid review-overview-grid">
@@ -743,12 +719,12 @@ export default function SubmissionForm({
                   </dd>
                 </div>
               </dl>
-              <div className="review-notes-block">
+              {notes.trim() && <div className="review-notes-block">
                 <span className="review-notes-label">Operator notes</span>
                 <p className="operator-notes">
-                  {notes.trim() || 'No notes provided.'}
+                  {notes.trim()}
                 </p>
-              </div>
+              </div>}
             </div>
 
             <div className="review-parts-list" aria-label="Parts to submit">
@@ -886,10 +862,10 @@ export default function SubmissionForm({
                 </strong>
                 <span className="small muted">
                   {files.length === 0
-                    ? `ASCII or binary STL · Up to 500 MiB each (up to ${MAX_BATCH_SIZE} files)`
+                    ? `Up to ${MAX_BATCH_SIZE} STL files · 500 MiB each`
                     : files.length === 1
-                      ? `${(files[0].size / 1024 ** 2).toFixed(2)} MiB · Click to add more or replace`
-                      : `${(files.reduce((s, f) => s + f.size, 0) / 1024 ** 2).toFixed(2)} MiB total · Click to add more files`}
+                      ? `${(files[0].size / 1024 ** 2).toFixed(2)} MiB`
+                      : `${(files.reduce((s, f) => s + f.size, 0) / 1024 ** 2).toFixed(2)} MiB total`}
                 </span>
                 <input
                   type="file"
@@ -907,9 +883,7 @@ export default function SubmissionForm({
                 >
                   <div className="batch-file-list-header">
                     <span className="small muted">
-                      {files.length === 1
-                        ? '1 file ready for submission'
-                        : `${files.length} files in batch (click a file to preview)`}
+                      {files.length} {files.length === 1 ? 'file' : 'files'}
                     </span>
                     {files.length > 1 && (
                       <button
@@ -937,9 +911,7 @@ export default function SubmissionForm({
                             type="button"
                             className="batch-file-select"
                             onClick={() => {
-                              setFileOptionsOpen(
-                                i === activeIndex ? !fileOptionsOpen : true,
-                              );
+                              setFileOptionsOpen(i === activeIndex ? !fileOptionsOpen : true);
                               setActiveIndex(i);
                             }}
                             aria-expanded={i === activeIndex && fileOptionsOpen}
@@ -1047,9 +1019,7 @@ export default function SubmissionForm({
               {isEmailVerified ? (
                 <p className="small muted contact-verified-note">
                   <span>
-                    Your email is verified on this browser — prints join the
-                    queue immediately without a confirmation email. We’ll email
-                    you when an operator changes their status.
+                    Prints queue without another confirmation email.
                   </span>
                   <button
                     type="button"
@@ -1061,9 +1031,8 @@ export default function SubmissionForm({
                 </p>
               ) : (
                 <p className="small muted">
-                  We’ll send a confirmation link and print updates here. Your
-                  email and operator notes are private. Your title and print
-                  settings are public after confirmation.
+                  Confirmation and updates go here. Email and notes are private;
+                  title and print settings are public.
                 </p>
               )}
             </fieldset>
@@ -1132,17 +1101,7 @@ export default function SubmissionForm({
             </button>
           )}
         </div>
-        <p className="small muted">
-          {reviewing
-            ? isEmailVerified
-              ? 'Your email is verified on this browser — confirming places your print directly in the queue.'
-              : 'Confirm the email link within 24 hours to join the queue.'
-            : `Review your settings and 3D preview on the next screen before ${
-                isEmailVerified
-                  ? 'adding to the queue.'
-                  : 'sending a confirmation email.'
-              }`}
-        </p>
+        {reviewing && !isEmailVerified && <p className="small muted">Confirm the email link within 24 hours to join the queue.</p>}
       </div>
       <aside className="preview-column">
         <Suspense

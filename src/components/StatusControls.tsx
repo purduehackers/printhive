@@ -62,7 +62,7 @@ export default function StatusControls({
         setMessage(
           hasWarnings
             ? result.warnings.join('; ')
-            : `Updated ${updatedList.length} print(s) in group and sent consolidated notification email.`
+            : `Updated ${updatedList.length} ${updatedList.length === 1 ? 'print' : 'prints'}.`
         );
       } else {
         const response = await fetch(`/api/jobs/${id}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: next, version, feedback: returning ? feedback : '' }) });
@@ -71,7 +71,7 @@ export default function StatusControls({
         setStatus(result.job.status); setVersion(result.job.version); setNext(transitions[result.job.status as Status][0]);
         setGroupJobs(prev => prev.map(j => j.id === id ? { ...j, status: result.job.status, version: result.job.version } : j));
         setFeedback('');
-        setError(Boolean(result.warning)); setMessage(result.warning || 'Status saved and notification email accepted for delivery.');
+        setError(Boolean(result.warning)); setMessage(result.warning || 'Status updated.');
       }
     } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : 'Could not update status.'); }
     finally { setBusy(false); }
@@ -90,16 +90,15 @@ export default function StatusControls({
             disabled={busy}
           />
           <span>
-            Apply to all {eligibleGroupJobs.length} prints in <strong>{groupName || 'this batch'}</strong> (sends 1 combined email)
+            Apply to {eligibleGroupJobs.length} prints in <strong>{groupName || 'this batch'}</strong>
           </span>
         </label>
       )}
       {returning && <>
         <label>Feedback for submitter<textarea value={feedback} onChange={e => setFeedback(e.target.value)} required maxLength={MAX_FEEDBACK_LENGTH} rows={5} disabled={busy} aria-describedby="return-feedback-help" /></label>
-        <p id="return-feedback-help" className="small muted">This removes the print from the active queue and emails your feedback to the submitter so they can submit a revised print.</p>
+        <p id="return-feedback-help" className="small muted">Emailed to the submitter.</p>
       </>}
-      <p className="small muted">Saving sends an email to the submitter.</p>
-      <button className="button primary" disabled={busy || (returning && !feedback.trim())}>{busy ? 'Saving and sending…' : returning ? 'Reject and return' : 'Update status'}</button>
+      <button className="button primary" disabled={busy || (returning && !feedback.trim())}>{busy ? 'Saving…' : returning ? 'Reject and return' : 'Update status'}</button>
     </form>
     {message && <div className={`notice ${error ? 'error' : ''}`} role="status">{message} <a href={`/operator/jobs/${id}`}>Refresh details</a></div>}
   </section>;

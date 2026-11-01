@@ -218,11 +218,9 @@ try {
     }[];
   } = { items: [] };
   page.on('request', (request) => {
-    if (
-      request.method() === 'PUT' &&
-      request.url().includes('/api/submissions/')
-    )
-      uploadedIds.push(request.url().match(/submissions\/([^/]+)\/file/)![1]);
+    const modelUpload = request.url().match(/submissions\/([^/]+)\/file/);
+    if (request.method() === 'PUT' && modelUpload)
+      uploadedIds.push(modelUpload[1]);
     if (
       request.method() === 'POST' &&
       request.url().endsWith('/api/submissions')
@@ -419,14 +417,23 @@ try {
   await expect(
     page.locator('.group-badge', { hasText: 'Batch Rover' }).first(),
   ).toBeVisible();
-  await page.getByLabel('Sort by:').selectOption('group');
+  await page.getByLabel('Sort by:').selectOption('title');
+  await page.getByRole('button', { name: 'Reverse sort order' }).click();
+  await expect(page.getByRole('button', { name: 'Reverse sort order' })).toContainText('Z–A');
   await page.getByLabel('Sort by:').selectOption('queue');
-  await page.getByRole('link', { name: 'Manage Browser test bracket' }).click();
+  await expect(page.getByRole('link', { name: /^Manage .*bracket/ })).toHaveCount(0);
+  const headingAlignment = await page.locator('.operator-queue-table').evaluate(table => {
+    const heading = table.querySelector('.print-column-heading')!;
+    const name = table.querySelector('.job-title')!;
+    return Math.abs(heading.getBoundingClientRect().x + parseFloat(getComputedStyle(heading).paddingLeft) - name.getBoundingClientRect().x);
+  });
+  expect(headingAlignment).toBeLessThan(1);
+  await page.getByRole('link', { name: 'Browser test bracket', exact: true }).click();
   await expect(page.getByText('Mirror X axis')).toHaveCount(0);
   await page.getByRole('button', { name: 'Update status' }).click();
   await expect(
     page.getByText(
-      'Status saved and notification email accepted for delivery.',
+      'Status updated.',
     ),
   ).toBeVisible();
   await expect(page.getByText('Current status:')).toContainText('printing');
@@ -463,7 +470,7 @@ try {
   await expect(page.getByText('Current status:')).toContainText('rejected');
   await expect(
     page.getByText(
-      'Status saved and notification email accepted for delivery.',
+      'Status updated.',
     ),
   ).toBeVisible();
   await page.getByRole('link', { name: 'Refresh details' }).click();
@@ -483,15 +490,43 @@ try {
   // Test queue selection, custom grouping, and batch status update
   await page.getByLabel('Select Browser test bracket').check();
   await expect(
-    page.getByRole('region', { name: 'Group status actions' }),
+    page.getByRole('region', { name: 'Selected print actions' }),
   ).toBeVisible();
   await expect(page.getByText('1 print selected')).toBeVisible();
+  const selectedActions = page.getByRole('region', { name: 'Selected print actions' });
+  await expect(selectedActions.getByRole('group', { name: 'File operations' }).getByRole('button')).toHaveCount(4);
+  await expect(page.getByLabel('New status for selected prints')).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Open with', exact: true })).toBeHidden();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const operationBounds = await Promise.all((await selectedActions.getByRole('group', { name: 'File operations' }).getByRole('button').all()).map(button => button.boundingBox()));
+  expect(new Set(operationBounds.map(bounds => bounds!.height)).size).toBe(1);
+  expect(new Set(operationBounds.map(bounds => bounds!.width)).size).toBe(1);
+  expect(new Set(operationBounds.map(bounds => bounds!.y)).size).toBe(1);
+  await selectedActions.screenshot({ path: 'test-results/operator-selection-desktop.png' });
+  await page.getByRole('button', { name: 'Open in slicer', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Open with', exact: true })).toBeVisible();
+  const [slicerField, slicerAction] = await Promise.all([
+    selectedActions.getByRole('combobox', { name: 'Open with', exact: true }).boundingBox(),
+    selectedActions.getByRole('button', { name: 'Prepare project', exact: true }).boundingBox(),
+  ]);
+  expect(slicerField!.height).toBe(slicerAction!.height);
+  expect(Math.abs(slicerField!.y - slicerAction!.y)).toBeLessThan(1);
+  await selectedActions.screenshot({ path: 'test-results/operator-selection-slicer-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await selectedActions.screenshot({ path: 'test-results/operator-selection-slicer-mobile.png' });
+  await page.getByRole('button', { name: 'Change status', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Open with', exact: true })).toBeHidden();
+  await page.getByLabel('New status for selected prints').selectOption('rejected');
+  await expect(selectedActions.getByRole('button', { name: 'Update status', exact: true })).toBeDisabled();
+  await page.getByLabel('Feedback for submitters').fill('Please revise the part.');
+  await selectedActions.screenshot({ path: 'test-results/operator-selection-status-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(
-    page.getByRole('button', { name: 'Download selected STLs ↓' }),
+    page.getByRole('button', { name: 'Download STLs', exact: true }),
   ).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download selected STLs ↓' }).click();
+  await page.getByRole('button', { name: 'Download STLs', exact: true }).click();
   const downloadedFile = await downloadPromise;
   expect(downloadedFile.suggestedFilename()).toMatch(
     /^printhive-[A-F0-9]{8}-bracket\.stl$/,
@@ -499,7 +534,9 @@ try {
 
   // Test custom group creation
   await page.getByRole('button', { name: 'Group selected' }).click();
-  await page.getByPlaceholder('Group name (e.g. Bed 1)').fill('Bed Alpha');
+  await expect(page.getByLabel('New status for selected prints')).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Group name', exact: true }).fill('Bed Alpha');
+  await selectedActions.screenshot({ path: 'test-results/operator-selection-group-mobile.png' });
   await page.getByRole('button', { name: 'Save group' }).click();
   await expect(
     page.locator('.group-badge', { hasText: 'Bed Alpha' }),
@@ -512,17 +549,18 @@ try {
   ).toBeVisible();
   await page.getByLabel('Group by:').selectOption('material-color');
   await expect(
-    page.getByRole('button', { name: 'Update group status' }),
+    page.getByRole('checkbox', { name: /^Select group/ }),
   ).toBeVisible();
 
   // Test batch status update
-  await page.getByRole('button', { name: 'Update group status' }).click();
+  await page.getByRole('checkbox', { name: /^Select group/ }).check();
+  await page.getByRole('button', { name: 'Change status', exact: true }).click();
   await page
     .getByLabel('New status for selected prints')
     .selectOption('queued');
-  await page.getByRole('button', { name: /Update status for 1 print/ }).click();
+  await page.getByRole('button', { name: 'Update status', exact: true }).click();
   await expect(page.getByRole('status')).toContainText(
-    'Successfully updated status to "queued"',
+    'Updated 1 print to queued.',
   );
 
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -723,8 +761,9 @@ try {
   }
   let unitUpload = '';
   unitsPage.on('request', (request) => {
-    if (request.method() === 'PUT')
-      unitUpload = request.url().match(/submissions\/([^/]+)\/file/)![1];
+    const modelUpload = request.url().match(/submissions\/([^/]+)\/file/);
+    if (request.method() === 'PUT' && modelUpload)
+      unitUpload = modelUpload[1];
   });
   await unitsPage
     .getByLabel('Project / part title')
