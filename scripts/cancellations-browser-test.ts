@@ -37,15 +37,26 @@ async function submit(title: string, email: string, count = 3) {
 }
 
 try {
+  browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(h.origin);
+  await mkdir('test-results', { recursive: true });
+  for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]] as const) {
+    await page.setViewportSize({ width, height });
+    await expect(page.getByText('No queued prints.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel prints', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('form', { name: 'Cancel selected prints', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/empty-queue-${label}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const one = await submit('Robot arm', 'maker@purdue.edu');
   await submit('Other submission', 'other@purdue.edu', 10);
   expect((await fetch(h.origin + '/api/cancellations', {
     method: 'POST', headers: { ...headers, Origin: 'https://untrusted.test' }, body: JSON.stringify({ ids: [one.items[0].id], email: 'maker@purdue.edu' }),
   })).status).toBe(403);
-  browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
-  const errors: string[] = [];
-  page.on('pageerror', error => errors.push(error.message));
   await page.goto(h.origin);
   const queueLayout = () => page.locator('.queue-list>li').evaluateAll(rows => rows.map(row => {
     const bounds = row.getBoundingClientRect();
@@ -55,23 +66,30 @@ try {
   }));
   const defaultDesktopLayout = await queueLayout();
   const entryButtons = page.getByRole('button', { name: 'Cancel prints', exact: true });
-  await expect(entryButtons).toHaveCount(2);
-  const [topEntry, bottomEntry] = await Promise.all([entryButtons.first().boundingBox(), entryButtons.last().boundingBox()]);
-  expect(Math.abs(topEntry!.x + topEntry!.width - bottomEntry!.x - bottomEntry!.width)).toBeLessThan(1);
+  const topCancel = page.locator('.queue-section-heading .queue-cancel-button');
+  const bottomCancel = page.locator('.queue-footer-actions .queue-cancel-button');
+  await expect(page.locator('.queue-cancel-button')).toHaveCount(2);
+  await topCancel.scrollIntoViewIfNeeded();
+  await expect(bottomCancel).toBeHidden();
   await mkdir('test-results', { recursive: true });
   await page.locator('.queue-section-heading').screenshot({ path: 'test-results/cancellation-heading-desktop.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   const defaultMobileLayout = await queueLayout();
   await page.locator('.queue-section-heading').screenshot({ path: 'test-results/cancellation-heading-mobile.png' });
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await entryButtons.last().click();
+  await page.locator('.queue-footer-actions').evaluate(element => element.scrollIntoView({ block: 'center' }));
+  await expect(topCancel).not.toBeInViewport();
+  await expect(bottomCancel).toBeVisible();
+  const [topEntry, bottomEntry] = await Promise.all([topCancel.boundingBox(), bottomCancel.boundingBox()]);
+  expect(Math.abs(topEntry!.x + topEntry!.width - bottomEntry!.x - bottomEntry!.width)).toBeLessThan(1);
+  await bottomCancel.click();
   await expect(page.getByLabel('Submission email', { exact: true })).toHaveCount(1);
   await page.getByLabel('Submission email', { exact: true }).scrollIntoViewIfNeeded();
   await expect(page.getByLabel('Submission email', { exact: true })).not.toBeFocused();
   await expect(page.locator('.queue-selection-bar')).toHaveClass(/is-docked/);
   await expect(page.getByRole('button', { name: 'Email cancellation link', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Exit selection', exact: true }).click();
-  await expect(entryButtons).toHaveCount(2);
+  await expect(page.locator('.queue-cancel-button')).toHaveCount(2);
   await entryButtons.first().click();
   expect(await queueLayout()).toEqual(defaultDesktopLayout);
   await expect(page.getByText('Ordered by confirmation time', { exact: true })).toHaveCount(0);
@@ -214,6 +232,64 @@ try {
   await page.goto(cancelUrl);
   await expect(page.getByRole('heading', { name: 'Cancellation already confirmed', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirm cancellation', exact: true })).toHaveCount(0);
+  await page.clock.install();
+  await page.goto(h.origin);
+  await page.getByRole('button', { name: 'Cancel prints', exact: true }).first().click();
+  await page.locator('.queue-cancel-target').first().click();
+  await expect(page.getByRole('form', { name: 'Cancel selected prints', exact: true })).toBeVisible();
+  // Keep an active print to also cover an empty waiting queue while printing continues.
+  const activeJob = (await queue())[0];
+  await page.route('**/api/queue', route => route.fulfill({ json: [{ ...activeJob, status: 'printing' }] }));
+  await page.clock.fastForward(15001);
+  await expect(page.getByText('No queued prints.', { exact: true })).toBeVisible();
+  await expect(page.locator('.printing-card')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Cancel prints', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('form', { name: 'Cancel selected prints', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Print cancellation selection', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/empty-queue-printing-mobile.png', fullPage: true });
+  await page.unroute('**/api/queue');
+  await page.clock.fastForward(15001);
+  await expect(page.locator('.queue-cancel-button')).toHaveCount(2);
+  const remainingJobs = await queue();
+  let shortQueue = remainingJobs.slice(0, 1);
+  await page.route('**/api/queue', route => route.fulfill({ json: shortQueue }));
+  for (const size of [1, 3]) {
+    shortQueue = remainingJobs.slice(0, size);
+    await page.clock.fastForward(15001);
+    await expect(page.locator('.queue-list>li')).toHaveCount(size);
+    for (const [label, width, height] of [['desktop', 1440, 1000], ['mobile', 390, 844]] as const) {
+      await page.setViewportSize({ width, height });
+      await page.locator('.queue-section-heading').evaluate(element => element.scrollIntoView({ block: 'start' }));
+      await expect(topCancel).toBeInViewport();
+      await expect(bottomCancel).toBeHidden();
+      await expect(entryButtons).toHaveCount(1);
+      const updateGap = await page.locator('.queue-refresh').evaluate(element =>
+        element.getBoundingClientRect().top - document.querySelector('.queue-list')!.getBoundingClientRect().bottom);
+      expect(updateGap).toBeGreaterThanOrEqual(12);
+      expect(updateGap).toBeLessThanOrEqual(32);
+      const footer = page.locator('.queue-footer-actions');
+      const footerHeight = await footer.evaluate(element => (element as HTMLElement).offsetHeight);
+      await page.screenshot({ path: `test-results/cancellation-short-${size}-${label}.png` });
+      const canScrollPastTop = await topCancel.evaluate(element => {
+        const target = element.getBoundingClientRect().bottom + scrollY + 1;
+        const canScrollPast = target <= document.documentElement.scrollHeight - innerHeight;
+        window.scrollTo({ top: target, behavior: 'instant' });
+        return canScrollPast;
+      });
+      if (canScrollPastTop) {
+        await expect(topCancel).not.toBeInViewport();
+        await expect(bottomCancel).toBeInViewport();
+        await expect(bottomCancel).toBeVisible();
+      } else {
+        await expect(topCancel).toBeInViewport();
+        await expect(bottomCancel).toBeHidden();
+      }
+      expect(await footer.evaluate(element => (element as HTMLElement).offsetHeight)).toBe(footerHeight);
+      await page.locator('.queue-section-heading').evaluate(element => element.scrollIntoView({ block: 'start' }));
+      await expect(bottomCancel).toBeHidden();
+    }
+  }
+  await page.unroute('**/api/queue');
   expect(errors).toEqual([]);
-  console.log('Cancellation browser flow passed: row clicks, keyboard selection, submission limits, ownership, email, restart persistence, mobile layout, and removal from the public queue.');
+  console.log('Cancellation browser flow passed: empty, short, and long desktop/mobile queues, duplicate action visibility, live transitions, selection, ownership, email, and persistence.');
 } finally { await browser?.close(); await h.close(); }

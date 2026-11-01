@@ -38,6 +38,9 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
   const [email, setEmail] = useState(''), [sending, setSending] = useState(false);
   const [cancelError, setCancelError] = useState(''), [message, setMessage] = useState('');
   const [emailFormInView, setEmailFormInView] = useState(false);
+  const [topCancelInView, setTopCancelInView] = useState(true);
+  const topCancelButton = useRef<HTMLButtonElement>(null);
+  const hasQueuedJobs = jobs.some(job => job.status === 'queued');
   const emailForm = useRef<HTMLDivElement>(null), emailInput = useRef<HTMLInputElement>(null);
   const receipt = useRef<HTMLParagraphElement>(null);
   const selectionAnchor = useRef<string | null>(null);
@@ -45,6 +48,12 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
     emailForm.current?.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
     emailInput.current?.focus({ preventScroll: true });
   };
+  useEffect(() => {
+    if (selecting || !hasQueuedJobs || !topCancelButton.current) return;
+    const observer = new IntersectionObserver(([entry]) => setTopCancelInView(entry.isIntersecting));
+    observer.observe(topCancelButton.current);
+    return () => observer.disconnect();
+  }, [selecting, hasQueuedJobs]);
   useEffect(() => {
     if (!selecting || !emailForm.current) return;
     const observer = new IntersectionObserver(([entry]) => setEmailFormInView(entry.intersectionRatio >= 0.05), { threshold: 0.05 });
@@ -70,6 +79,9 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
   }, []);
 
   useEffect(() => {
+    if (!jobs.some(job => job.status === 'queued')) {
+      setSelecting(false); selectionAnchor.current = null; setEmailFormInView(false); setCancelError('');
+    }
     setSelected(current => {
       const available = current.filter(id => jobs.some(job => job.id === id && job.status === 'queued'));
       return available.length === current.length ? current : available;
@@ -89,7 +101,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
   };
   const startSelection = () => { setSelecting(true); setMessage(''); };
   const exitSelection = () => {
-    setSelecting(false); setSelected([]); selectionAnchor.current = null; setCancelError(''); setEmailFormInView(false);
+    setSelecting(false); setSelected([]); selectionAnchor.current = null; setCancelError(''); setEmailFormInView(false); setTopCancelInView(true);
   };
   const sendCancellation = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -146,7 +158,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
     <section aria-labelledby="queue-heading">
       <div className="section-heading queue-section-heading">
         <h2 id="queue-heading">Queued <span className="count">{queued.length}</span></h2>
-        {!selecting && <button className="queue-cancel-button" type="button" disabled={!queued.length}
+        {!selecting && queued.length > 0 && <button className="queue-cancel-button" type="button" ref={topCancelButton}
           onClick={startSelection}>Cancel prints</button>}
       </div>
       {selecting && <p id="cancel-selection-help" className="small muted">Select prints to cancel from one submission.</p>}
@@ -200,9 +212,6 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
           </li>
         );
       })}</ol> : <div className="empty-state">No queued prints.</div>}
-      {!selecting && <div className="queue-footer-actions">
-        <button className="queue-cancel-button" type="button" disabled={!queued.length} onClick={startSelection}>Cancel prints</button>
-      </div>}
       {selecting && <div className={`queue-selection-bar${emailFormInView ? ' is-docked' : ''}`} role="region" aria-label="Print cancellation selection">
         <div className="queue-selection-summary">
           <div className="queue-selection-count">
@@ -235,7 +244,13 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
         </form>
       </div>}
       {message && <p className="notice" role="status" ref={receipt}>{message}</p>}
+      <div className="queue-footer">
+        <p className="small muted queue-refresh">Updates every 15 seconds.</p>
+        {!selecting && queued.length > 0 && <div className={`queue-footer-actions${topCancelInView ? ' is-redundant' : ''}`}
+          aria-hidden={topCancelInView} inert={topCancelInView}>
+          <button className="queue-cancel-button" type="button" onClick={startSelection}>Cancel prints</button>
+        </div>}
+      </div>
     </section>
-    <p className="small muted queue-refresh">Updates every 15 seconds.</p>
   </>;
 }
