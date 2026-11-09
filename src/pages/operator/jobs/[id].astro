@@ -2,6 +2,7 @@
 import Layout from '../../../layouts/Layout.astro';
 import StatusControls from '../../../components/StatusControls';
 import SlicerControls from '../../../components/SlicerControls';
+import NotificationRetry from '../../../components/NotificationRetry';
 import { currentOperator } from '../../../lib/server/auth';
 import { db } from '../../../lib/server/db';
 import { effectiveGroupName, reference, resolveColor, summarizeGroupStatus, supportLabel, type Job, type Status } from '../../../lib/shared';
@@ -9,7 +10,7 @@ if (!await currentOperator(Astro)) return Astro.redirect('/operator/login');
 const sql = await db();
 const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${Astro.params.id ?? ''} AND confirmed_at IS NOT NULL`;
 if (!job) { Astro.response.status = 404; }
-const events: { previous_status: string; next_status: string; feedback: string; username: string | null; operator_id: number | null; created_at: number }[] = job ? await sql`SELECT e.*, o.username FROM job_events e LEFT JOIN operators o ON o.id = e.operator_id WHERE job_id = ${job.id} ORDER BY e.id DESC` : [];
+const events: { id: number; previous_status: string; next_status: string; feedback: string; username: string | null; operator_id: number | null; created_at: number; notification_status: string }[] = job ? await sql`SELECT e.*, o.username FROM job_events e LEFT JOIN operators o ON o.id = e.operator_id WHERE job_id = ${job.id} ORDER BY e.id DESC` : [];
 const groupLabel = job ? effectiveGroupName(job) : null;
 const groupJobs: Job[] = job && (job.batch_id || groupLabel)
   ? await sql`SELECT * FROM jobs WHERE confirmed_at IS NOT NULL AND (
@@ -82,6 +83,9 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
               <li>
                 <strong>{event.previous_status} → {event.next_status}</strong>
                 <span>{event.username ?? (event.operator_id === null && event.next_status === 'canceled' ? 'Submitter' : 'Operator')} · {new Date(event.created_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
+                {event.notification_status === 'failed' && (
+                  <span class="notification-failed-badge">email failed <NotificationRetry jobId={job.id} eventId={event.id} client:load /></span>
+                )}
                 {event.feedback && <p class="operator-notes">{event.feedback}</p>}
               </li>
             ))}

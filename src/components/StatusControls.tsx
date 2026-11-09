@@ -1,5 +1,6 @@
 import { useState, type SubmitEvent } from 'react';
 import { MAX_FEEDBACK_LENGTH, transitions, type Status } from '../lib/shared';
+import NotificationRetry, { BatchNotificationRetry } from './NotificationRetry';
 
 interface GroupMember {
   id: string;
@@ -26,6 +27,7 @@ export default function StatusControls({
   const [applyToGroup, setApplyToGroup] = useState(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [retryEventId, setRetryEventId] = useState<number | null>(null), [retryIds, setRetryIds] = useState<string[]>([]);
   const returning = next === 'rejected';
 
   const eligibleGroupJobs = groupJobs.filter(j => transitions[j.status]?.includes(next) || j.status === next);
@@ -59,6 +61,8 @@ export default function StatusControls({
         const hasWarnings = Array.isArray(result.warnings) && result.warnings.length > 0;
         const hasErrors = Array.isArray(result.errors) && result.errors.length > 0;
         setError(hasWarnings || hasErrors);
+        setRetryEventId(null);
+        setRetryIds(Array.isArray(result.failed) ? result.failed : []);
         setMessage(
           hasWarnings
             ? result.warnings.join('; ')
@@ -72,8 +76,10 @@ export default function StatusControls({
         setGroupJobs(prev => prev.map(j => j.id === id ? { ...j, status: result.job.status, version: result.job.version } : j));
         setFeedback('');
         setError(Boolean(result.warning)); setMessage(result.warning || 'Status updated.');
+        setRetryIds([]);
+        setRetryEventId(result.warning && Number.isSafeInteger(result.eventId) ? result.eventId : null);
       }
-    } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : 'Could not update status.'); }
+    } catch (e) { setError(true); setMessage(e instanceof Error ? e.message : 'Could not update status.'); setRetryEventId(null); setRetryIds([]); }
     finally { setBusy(false); }
   }
   return <section className="detail-card">
@@ -100,6 +106,10 @@ export default function StatusControls({
       </>}
       <button className="button primary" disabled={busy || (returning && !feedback.trim())}>{busy ? 'Saving…' : returning ? 'Reject and return' : 'Update status'}</button>
     </form>
-    {message && <div className={`notice ${error ? 'error' : ''}`} role="status">{message} <a href={`/operator/jobs/${id}`}>Refresh details</a></div>}
+    {message && <div className={`notice ${error ? 'error' : ''}`} role="status">{message}
+      {retryEventId !== null && <NotificationRetry jobId={id} eventId={retryEventId} onDone={sent => { setRetryEventId(null); setError(!sent); setMessage(sent ? 'Notification email sent.' : 'The notification email failed again. Contact the submitter directly.'); }} />}
+      {retryIds.length > 0 && <BatchNotificationRetry ids={retryIds} onDone={allSent => { setRetryIds([]); setError(!allSent); setMessage(allSent ? 'Notification emails sent.' : 'Some notification emails failed again. Contact those submitters directly.'); }} />}
+      {' '}<a href={`/operator/jobs/${id}`}>Refresh details</a>
+    </div>}
   </section>;
 }

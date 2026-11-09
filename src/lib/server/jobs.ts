@@ -290,7 +290,7 @@ export async function updateStatus(id: string, next: Status, version: number, op
   invariant(next !== 'rejected' || feedback.length > 0, 400, 'Provide feedback before rejecting and returning this print.');
   invariant(next === 'rejected' || feedback.length === 0, 400, 'Feedback is only supported when rejecting and returning a print.');
   const sql = await db();
-  const result = await sql.begin(async tx => {
+  const result: { job: Job; changed: boolean; eventId?: number } = await sql.begin(async tx => {
     // A conditional UPDATE is the first statement, acquiring SQLite's write lock before reading.
     const [job]: Job[] = await tx`UPDATE jobs SET version = version WHERE id = ${id} AND confirmed_at IS NOT NULL RETURNING *`;
     invariant(job, 404, 'Print not found.');
@@ -300,19 +300,29 @@ export async function updateStatus(id: string, next: Status, version: number, op
     const now = Date.now();
     const [updated]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
       queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${id} RETURNING *`;
-    await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
-      VALUES (${id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback})`;
-    return { job: updated, changed: true };
+    const [event] = await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
+      VALUES (${id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback}) RETURNING id`;
+    return { job: updated, changed: true, eventId: Number(event.id) };
   });
   let warning: string | undefined;
   if (result.changed) {
+    let delivered = true;
     try { await mailer(statusMessage(result.job, feedback), { jobId: id, purpose: 'status' }); }
     catch (error) {
-      logError('job.notification_failed', error, { jobId: id, operatorId: operator, jobStatus: result.job.status, version: result.job.version });
-      warning = 'Status saved, but the notification email failed. Contact the submitter directly; email will not be retried automatically.';
+      delivered = false;
+      logError('job.notification_failed', error, { jobId: id, operatorId: operator, jobStatus: result.job.status, version: result.job.version, eventId: result.eventId });
+      warning = 'Status saved, but the notification email failed. It is not retried automatically — use “Retry email” or contact the submitter directly.';
     }
+    await markNotificationStatus(result.eventId!, delivered, { jobId: id });
   }
   return { ...result, warning };
+}
+
+async function markNotificationStatus(eventId: number, delivered: boolean, context: { jobId: string }) {
+  try {
+    const sql = await db();
+    await sql`UPDATE job_events SET notification_status = ${delivered ? 'sent' : 'failed'} WHERE id = ${eventId}`;
+  } catch (error) { logError('job.notification_status_failed', error, { ...context, eventId }); }
 }
 
 export interface BatchStatusItem {
@@ -325,6 +335,7 @@ export interface BatchStatusResult {
   unchanged: Job[];
   errors: { id: string; error: string }[];
   warnings: string[];
+  failed: string[];
 }
 
 export async function batchUpdateStatus(
@@ -353,11 +364,12 @@ export async function batchUpdateStatus(
   const unchanged: Job[] = [];
   const errors: { id: string; error: string }[] = [];
   const warnings: string[] = [];
-  const toNotify: Job[] = [];
+  const failed: string[] = [];
+  const toNotify: { job: Job; eventId: number }[] = [];
 
   for (const item of items) {
     try {
-      const res = await sql.begin(async tx => {
+      const res: { job: Job; changed: boolean; eventId?: number } = await sql.begin(async tx => {
         const [job]: Job[] = await tx`UPDATE jobs SET version = version WHERE id = ${item.id} AND confirmed_at IS NOT NULL RETURNING *`;
         if (!job) throw new Error('Print not found.');
         if (item.version !== undefined && job.version !== item.version) {
@@ -370,14 +382,14 @@ export async function batchUpdateStatus(
         const now = Date.now();
         const [updatedJob]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
           queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${item.id} RETURNING *`;
-        await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
-          VALUES (${item.id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback})`;
-        return { job: updatedJob, changed: true };
+        const [event] = await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
+          VALUES (${item.id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback}) RETURNING id`;
+        return { job: updatedJob, changed: true, eventId: Number(event.id) };
       });
 
       if (res.changed) {
         updated.push(res.job);
-        toNotify.push(res.job);
+        toNotify.push({ job: res.job, eventId: res.eventId! });
       } else {
         unchanged.push(res.job);
       }
@@ -386,25 +398,103 @@ export async function batchUpdateStatus(
     }
   }
 
-  const byRecipient = new Map<string, Job[]>();
-  for (const job of toNotify) {
-    const key = job.email.toLowerCase();
+  const byRecipient = new Map<string, { job: Job; eventId: number }[]>();
+  for (const target of toNotify) {
+    const key = target.job.email.toLowerCase();
     if (!byRecipient.has(key)) byRecipient.set(key, []);
-    byRecipient.get(key)!.push(job);
+    byRecipient.get(key)!.push(target);
   }
 
-  for (const recipientJobs of byRecipient.values()) {
+  for (const recipientTargets of byRecipient.values()) {
+    const recipientJobs = recipientTargets.map(t => t.job);
     try {
       await mailer(statusMessage(recipientJobs, feedback), { jobId: recipientJobs[0].id, purpose: 'status' });
+      for (const target of recipientTargets) await markNotificationStatus(target.eventId, true, { jobId: target.job.id });
     } catch (error) {
-      for (const job of recipientJobs) {
-        logError('job.notification_failed', error, { jobId: job.id, operatorId: operator, jobStatus: job.status, version: job.version });
-        warnings.push(`Status saved for ${job.title}, but the notification email failed.`);
+      for (const target of recipientTargets) {
+        logError('job.notification_failed', error, { jobId: target.job.id, operatorId: operator, jobStatus: target.job.status, version: target.job.version, eventId: target.eventId });
+        await markNotificationStatus(target.eventId, false, { jobId: target.job.id });
+        warnings.push(`Status saved for ${target.job.title}, but the notification email failed.`);
+        failed.push(target.job.id);
       }
     }
   }
 
-  return { updated, unchanged, errors, warnings };
+  return { updated, unchanged, errors, warnings, failed };
+}
+
+export async function resendNotification(id: string, operator: number,
+  { eventId = null, mailer = sendMail }: { eventId?: number | null; mailer?: Mailer } = {}) {
+  invariant(Number.isSafeInteger(operator) && operator > 0, 401, 'Please log in as an operator.');
+  const sql = await db();
+  const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id} AND confirmed_at IS NOT NULL`;
+  invariant(job, 404, 'Print not found.');
+  let event: { id: number; next_status: string; feedback: string } | undefined;
+  if (eventId !== null) {
+    invariant(Number.isSafeInteger(eventId), 400, 'Invalid status event.');
+    [event] = await sql`SELECT id, next_status, feedback FROM job_events WHERE id = ${eventId} AND job_id = ${id}`;
+    invariant(event, 404, 'That status update was not found for this print.');
+  } else {
+    [event] = await sql`SELECT id, next_status, feedback FROM job_events WHERE job_id = ${id} ORDER BY id DESC LIMIT 1`;
+    invariant(event, 409, 'This print has no status update to notify about yet.');
+  }
+  try {
+    await mailer(statusMessage({ ...job, status: event.next_status as Status }, event.feedback), { jobId: id, purpose: 'status' });
+    await markNotificationStatus(event.id, true, { jobId: id });
+    return { sent: true, eventId: event.id };
+  } catch (error) {
+    logError('job.notification_failed', error, { jobId: id, operatorId: operator, eventId: event.id, retried: true });
+    await markNotificationStatus(event.id, false, { jobId: id });
+    return { sent: false, eventId: event.id, warning: 'The notification email failed again. Contact the submitter directly.' };
+  }
+}
+
+export async function resendBatchNotifications(rawIds: unknown, operator: number, { mailer = sendMail }: { mailer?: Mailer } = {}) {
+  invariant(Number.isSafeInteger(operator) && operator > 0, 401, 'Please log in as an operator.');
+  invariant(Array.isArray(rawIds) && rawIds.length > 0 && rawIds.length <= 100, 400, 'Must provide between 1 and 100 prints to notify.');
+  const ids = Array.from(new Set(rawIds.map(id => {
+    invariant(typeof id === 'string' && /^[a-f0-9-]{36}$/.test(id), 400, 'Invalid print ID.');
+    return id;
+  })));
+  const sql = await db();
+  const targets: { job: Job; event: { id: number; next_status: string; feedback: string } }[] = [];
+  const skipped: string[] = [];
+  for (const id of ids) {
+    const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id} AND confirmed_at IS NOT NULL`;
+    const [event]: { id: number; next_status: string; feedback: string }[] = job ? await sql`
+      SELECT id, next_status, feedback FROM job_events WHERE job_id = ${id} AND notification_status = 'failed' ORDER BY id DESC LIMIT 1` : [];
+    if (!job || !event) { skipped.push(id); continue; }
+    targets.push({ job, event });
+  }
+  // Consolidate per submitter and status/feedback, mirroring batchUpdateStatus.
+  const groups = new Map<string, typeof targets>();
+  for (const target of targets) {
+    const key = `${target.job.email.toLowerCase()}\0${target.event.next_status}\0${target.event.feedback}`;
+    const list = groups.get(key) ?? [];
+    list.push(target);
+    groups.set(key, list);
+  }
+  const notified: { id: string; eventId: number; sent: boolean }[] = [];
+  const warnings: string[] = [];
+  for (const list of groups.values()) {
+    const first = list[0];
+    const jobs = list.map(t => ({ ...t.job, status: t.event.next_status as Status }));
+    try {
+      await mailer(statusMessage(jobs, first.event.feedback), { jobId: first.job.id, purpose: 'status' });
+      for (const target of list) {
+        await markNotificationStatus(target.event.id, true, { jobId: target.job.id });
+        notified.push({ id: target.job.id, eventId: target.event.id, sent: true });
+      }
+    } catch (error) {
+      logError('job.notification_failed', error, { jobId: first.job.id, operatorId: operator, retried: true, jobs: list.length });
+      for (const target of list) {
+        await markNotificationStatus(target.event.id, false, { jobId: target.job.id });
+        notified.push({ id: target.job.id, eventId: target.event.id, sent: false });
+        warnings.push(`The notification email for ${target.job.title} failed again.`);
+      }
+    }
+  }
+  return { notified, skipped, warnings };
 }
 
 export async function updateJobGroup(

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
-import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus, updateJobGroup } from '../../lib/server/jobs';
+import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus, updateJobGroup, resendNotification, resendBatchNotifications } from '../../lib/server/jobs';
 import { login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
@@ -191,6 +191,21 @@ export const ALL: APIRoute = async (context) => {
       rateLimit('status:' + operator.id, 120, 900000);
       const items = (body as any).items ?? (body as any).ids;
       return json(await batchUpdateStatus(items, (body as any).status, operator.id, { feedback: (body as any).feedback }));
+    }
+    const notifyMatch = /^jobs\/([a-f0-9-]{36})\/notify$/.exec(path);
+    if (notifyMatch && method === 'POST') {
+      const operator = await requireOperator(context), body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Invalid notification retry.');
+      rateLimit('notify:' + operator.id, 60, 900000);
+      const eventId = (body as any).eventId;
+      invariant(eventId === undefined || Number.isSafeInteger(eventId), 400, 'Invalid status event.');
+      return json(await resendNotification(notifyMatch[1], operator.id, { eventId }));
+    }
+    if (path === 'jobs/batch-notify' && method === 'POST') {
+      const operator = await requireOperator(context), body = await smallBody(request);
+      invariant(body && typeof body === 'object', 400, 'Invalid notification retry.');
+      rateLimit('notify:' + operator.id, 60, 900000);
+      return json(await resendBatchNotifications((body as any).ids, operator.id));
     }
     if (path === 'jobs/group' && ['POST', 'PATCH'].includes(method)) {
       const operator = await requireOperator(context), body = await smallBody(request);

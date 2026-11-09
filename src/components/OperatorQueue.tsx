@@ -14,6 +14,7 @@ import {
 } from '../lib/shared';
 import { operatorGroups, type OperatorGroupBy, type OperatorSortBy } from '../lib/operator-queue-view';
 import { selectListItem, type SelectionModifiers } from '../lib/list-selection';
+import { BatchNotificationRetry } from './NotificationRetry';
 
 interface OperatorQueueProps {
   initialJobs: Job[];
@@ -35,7 +36,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
   const [batchStatus, setBatchStatus] = useState<Status | ''>('');
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
+  const [notice, setNotice] = useState<{ message: string; type: 'success' | 'warning' | 'error'; failedIds?: string[] } | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
 
@@ -281,6 +282,7 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
       const updatedCount = result.updated?.length || 0;
       const errorCount = result.errors?.length || 0;
       const warningCount = result.warnings?.length || 0;
+      const failedIds: string[] = Array.isArray(result.failed) ? result.failed : [];
 
       if (errorCount > 0) {
         const errorDetails = result.errors.map((e: { id: string; error: string }) => {
@@ -290,11 +292,13 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
         setNotice({
           type: 'warning',
           message: `Updated ${updatedCount} print(s), but ${errorCount} could not be updated: ${errorDetails.join('; ')}`,
+          failedIds,
         });
       } else if (warningCount > 0) {
         setNotice({
           type: 'warning',
           message: `Status updated for ${updatedCount} print(s), but some email notifications failed: ${result.warnings.join('; ')}`,
+          failedIds,
         });
       } else {
         setNotice({
@@ -345,6 +349,9 @@ export default function OperatorQueue({ initialJobs, filter = 'all', page = 1, r
       {notice && (
         <div className={`notice ${notice.type === 'error' || notice.type === 'warning' ? 'error' : ''}`} role="status">
           {notice.message}
+          {notice.failedIds && notice.failedIds.length > 0 && (
+            <BatchNotificationRetry ids={notice.failedIds} onDone={() => setNotice(current => current ? { ...current, failedIds: [] } : current)} />
+          )}
         </div>
       )}
 

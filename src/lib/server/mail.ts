@@ -1,33 +1,53 @@
 import nodemailer from 'nodemailer';
 import { config } from './config';
 import { effectiveGroupName, reference, type Job } from '../shared';
-import { logError } from './log';
+import { logError, logWarning } from './log';
 
 export interface Message { to: string; subject: string; text: string }
 export type Mailer = (message: Message, context?: { jobId: string; purpose: 'confirmation' | 'cancellation' | 'status' }) => Promise<void>;
+
+// Socket-level failures and SMTP 4xx replies are usually transient (timeouts,
+// resets, greylisting, rate limits); auth, envelope and 5xx rejections are not.
+const TRANSIENT_CODES = new Set(['ETIMEDOUT', 'ESOCKET', 'ECONNECTION', 'ECONNRESET', 'ECONNABORTED', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
+export function isTransientMailError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, responseCode } = error as { code?: unknown; responseCode?: unknown };
+  if (typeof code === 'string' && TRANSIENT_CODES.has(code)) return true;
+  return typeof responseCode === 'number' && responseCode >= 400 && responseCode < 500;
+}
+
+const MAIL_ATTEMPTS = 3;
 export const sendMail: Mailer = async (message, context) => {
   const secure = process.env.SMTP_SECURE !== 'false';
   const port = Number(process.env.SMTP_PORT ?? (secure ? 465 : 1025));
   const started = Date.now();
-  let transport: ReturnType<typeof nodemailer.createTransport> | undefined;
-  try {
-    if (config().production && !secure) throw new Error('Production SMTP requires implicit TLS');
-    if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) throw new Error('SMTP_HOST and SMTP_FROM are required');
-    transport = nodemailer.createTransport({
-      host: process.env.SMTP_HOST, port, secure,
-      auth: process.env.SMTP_USERNAME ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD } : undefined,
-      connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
-      tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
-    });
-    const result = await transport.sendMail({ from: process.env.SMTP_FROM, ...message, disableFileAccess: true, disableUrlAccess: true });
-    if (!result.accepted?.length || result.rejected?.length) throw Object.assign(new Error('SMTP did not accept recipient'), {
-      code: 'EENVELOPE', response: result.response,
-    });
-  } catch (error) {
-    logError('email.send_failed', error, { ...context, smtpHost: process.env.SMTP_HOST, smtpPort: port,
-      secure, authConfigured: Boolean(process.env.SMTP_USERNAME), durationMs: Date.now() - started });
-    throw error;
-  } finally { transport?.close(); }
+  for (let attempt = 1; ; attempt++) {
+    let transport: ReturnType<typeof nodemailer.createTransport> | undefined;
+    try {
+      if (config().production && !secure) throw new Error('Production SMTP requires implicit TLS');
+      if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) throw new Error('SMTP_HOST and SMTP_FROM are required');
+      transport = nodemailer.createTransport({
+        host: process.env.SMTP_HOST, port, secure,
+        auth: process.env.SMTP_USERNAME ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD } : undefined,
+        connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
+        tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true },
+      });
+      const result = await transport.sendMail({ from: process.env.SMTP_FROM, ...message, disableFileAccess: true, disableUrlAccess: true });
+      if (!result.accepted?.length || result.rejected?.length) throw Object.assign(new Error('SMTP did not accept recipient'), {
+        code: 'EENVELOPE', response: result.response,
+      });
+      return;
+    } catch (error) {
+      if (attempt < MAIL_ATTEMPTS && isTransientMailError(error)) {
+        logWarning('email.retrying', error, { ...context, attempt, maxAttempts: MAIL_ATTEMPTS });
+        await new Promise(resolve => setTimeout(resolve, 300 * attempt * attempt));
+        continue;
+      }
+      logError('email.send_failed', error, { ...context, attempts: attempt, smtpHost: process.env.SMTP_HOST, smtpPort: port,
+        secure, authConfigured: Boolean(process.env.SMTP_USERNAME), durationMs: Date.now() - started });
+      throw error;
+    } finally { transport?.close(); }
+  }
 };
 export function confirmationMessage(job: Job | Job[], token: string): Message {
   const jobs = Array.isArray(job) ? job : [job];

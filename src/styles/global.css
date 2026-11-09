@@ -204,3 +204,6 @@ details[open] > summary .dropdown-chevron{transform:rotate(180deg)}
 /* Native actions keep a visible button boundary, including quiet secondary actions. */
 button.text-button{padding:7px 11px;border:1px solid #abb2a0;border-radius:4px;background:#fcfcf9;text-decoration:none;line-height:1.25}
 button.text-button:hover:not(:disabled){background:#edf1e4;border-color:var(--green)}
+/* Notification retry controls sit inline next to warnings and history entries. */
+.notification-retry .text-button{display:inline-block;margin:0;padding:2px 9px;font-size:.72rem}
+.history span.notification-failed-badge{display:inline-flex;align-items:center;gap:6px;background:#f2ded3;color:#874636;padding:2px 7px;border-radius:4px;font-size:.68rem;font-weight:600;margin-top:6px;width:fit-content}
