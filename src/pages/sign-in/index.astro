@@ -33,7 +33,7 @@ if (Astro.request.method === 'POST') {
 }
 ---
 <Layout title={sent ? 'Check your email' : 'Sign in'} active="sign-in">
-  <section class="login-panel member-login">
+  <section class:list={['login-panel', 'member-login', { 'member-login-choice': !sent }]}>
     {sent ? <>
       <h1>Check your email</h1>
       <p role="status">If <strong>{email}</strong> is registered with HIVE, you’ll receive a sign-in link. It expires in 15 minutes.</p>
@@ -47,21 +47,22 @@ if (Astro.request.method === 'POST') {
       <h1>Sign in to PrintHive</h1>
       {error && !failedAction && <p class="notice error" role="alert">{error}</p>}
       <div class="sign-in-options">
-        <section aria-label="Purdue Hackers ID">
-          {idError && <p class="notice error" role="alert">Purdue Hackers ID sign-in didn’t finish. Try again below.</p>}
-          {error && failedAction === 'id' && <p class="notice error" role="alert">{error}</p>}
-          <form method="post">
-            <button type="submit" name="action" value="id" class="button primary">Continue with Purdue Hackers ID</button>
-          </form>
-        </section>
-        <div class="sign-in-divider" aria-hidden="true">or</div>
         <section aria-labelledby="hive-sign-in">
-          <h2 id="hive-sign-in">Sign in as a HIVE member</h2>
+          <h2 id="hive-sign-in">HIVE member</h2>
           <p>Use the @purdue.edu email you registered with HIVE.</p>
           {error && failedAction && failedAction !== 'id' && <p class="notice error" role="alert">{error}</p>}
           <form method="post">
             <label>Purdue email <input name="email" type="email" autocomplete="email" maxlength="254" value={email} required /></label>
             <button type="submit" name="action" value="hive" class="button secondary">Email me a sign-in link</button>
+          </form>
+        </section>
+        <section aria-labelledby="id-sign-in">
+          <h2 id="id-sign-in">Purdue Hackers ID</h2>
+          <p>Use your Purdue Hackers ID account to sign in.</p>
+          {idError && <p class="notice error" role="alert">Purdue Hackers ID sign-in didn’t finish. Try again below.</p>}
+          {error && failedAction === 'id' && <p class="notice error" role="alert">{error}</p>}
+          <form method="post">
+            <button type="submit" name="action" value="id" class="button secondary">Continue with Purdue Hackers ID</button>
           </form>
         </section>
       </div>

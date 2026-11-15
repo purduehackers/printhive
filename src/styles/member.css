@@ -71,24 +71,34 @@
   max-width: 440px;
 }
 
+.member-login-choice {
+  max-width: 760px;
+}
+
+.sign-in-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.sign-in-options > section {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(16px, 3vw, 24px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
 .sign-in-options form {
   display: grid;
+  margin-top: auto;
 }
 
-.sign-in-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-block: 20px;
-  font-size: .85rem;
-  color: var(--ink);
-}
-
-.sign-in-divider::before,
-.sign-in-divider::after {
-  content: '';
-  flex: 1;
-  border-top: 1px solid var(--line);
+@media (max-width: 640px) {
+  .sign-in-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .member-login h2 {
