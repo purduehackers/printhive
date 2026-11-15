@@ -11,7 +11,7 @@ import { logError, logFailure } from './log';
 import { listMaterialsWithColors } from './materials';
 import { recordQueuePush } from './push';
 
-async function loadAllowedMaterials() {
+export async function loadAllowedMaterials() {
   let allowedMaterials: AllowedMaterial[] | undefined;
   try {
     const mats = await listMaterialsWithColors();
@@ -27,18 +27,18 @@ async function loadAllowedMaterials() {
   return allowedMaterials;
 }
 
-export async function reserve(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
+export async function reserve(input: unknown, { verifiedEmail = null, memberId = null }: { verifiedEmail?: string | null; memberId?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
-  const data = metadata(input, allowedMaterials), sql = await db(), now = Date.now();
+  const data = metadata(input, allowedMaterials, Boolean(memberId)), sql = await db(), now = Date.now();
   const id = randomUUID(), expires = now + config().uploadTTL;
   // Create the capability before the pending job, so misconfiguration leaves no incomplete submission.
   const capability = seal(id, 'upload', expires);
   const rows = await sql`
     INSERT INTO jobs (id, email, title, notes, infill, walls, material, color, layer_height, supports, support_angle, copies, mirror,
-      original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at)
+      original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, member_id)
     SELECT ${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.walls}, ${data.material}, ${data.color}, ${data.layer_height},
       ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
-      'reserved', ${now + 86400000}, ${expires}, ${now}
+      'reserved', ${now + 86400000}, ${expires}, ${now}, ${memberId}
     WHERE (SELECT COUNT(*) FROM jobs WHERE email = ${data.email} AND status = 'pending_confirmation') < ${MAX_BATCH_SIZE * 3}
     RETURNING id`;
   invariant(rows.length, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
@@ -46,9 +46,9 @@ export async function reserve(input: unknown, { verifiedEmail = null }: { verifi
   return { id, capability, verified };
 }
 
-export async function reserveBatch(input: unknown, { verifiedEmail = null }: { verifiedEmail?: string | null } = {}) {
+export async function reserveBatch(input: unknown, { verifiedEmail = null, memberId = null }: { verifiedEmail?: string | null; memberId?: string | null } = {}) {
   const allowedMaterials = await loadAllowedMaterials();
-  const itemsData = batchMetadata(input, allowedMaterials), sql = await db(), now = Date.now();
+  const itemsData = batchMetadata(input, allowedMaterials, Boolean(memberId)), sql = await db(), now = Date.now();
   const expires = now + config().uploadTTL;
   const batchId = randomUUID();
   const batchTitle = itemsData[0].batch_title;
@@ -65,17 +65,19 @@ export async function reserveBatch(input: unknown, { verifiedEmail = null }: { v
     capability: seal(ids[idx], 'upload', expires),
   }));
   const batchToken = seal(ids, 'upload', expires);
-  const [{ count }] = await sql`SELECT COUNT(*) AS count FROM jobs WHERE email = ${itemsData[0].email} AND status = 'pending_confirmation'`;
-  invariant(Number(count) + itemsData.length <= MAX_BATCH_SIZE * 3, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
-  for (let i = 0; i < itemsData.length; i++) {
-    const data = itemsData[i], id = ids[i];
-    await sql`
+  await sql.begin(async tx => {
+    const [{ count }] = await tx`SELECT COUNT(*) AS count FROM jobs WHERE email = ${itemsData[0].email} AND status = 'pending_confirmation'`;
+    invariant(Number(count) + itemsData.length <= MAX_BATCH_SIZE * 3, 429, 'You have too many unconfirmed submissions. Confirm them or try again after cleanup.');
+    for (let i = 0; i < itemsData.length; i++) {
+      const data = itemsData[i], id = ids[i];
+      await tx`
       INSERT INTO jobs (id, email, title, notes, infill, walls, material, color, layer_height, supports, support_angle, copies, mirror,
-        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, batch_id, batch_title, group_name)
+        original_filename, storage_key, file_size, upload_state, pending_expires_at, upload_expires_at, created_at, batch_id, batch_title, group_name, member_id)
       VALUES (${id}, ${data.email}, ${data.title}, ${data.notes}, ${data.infill}, ${data.walls}, ${data.material}, ${data.color}, ${data.layer_height},
         ${data.supports}, ${data.support_angle}, ${data.copies}, ${data.mirror}, ${data.original_filename}, ${id + '.stl'}, ${data.file_size},
-        'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name})`;
-  }
+        'reserved', ${now + 86400000}, ${expires}, ${now + i}, ${batchId}, ${data.batch_title}, ${data.group_name}, ${memberId})`;
+    }
+  });
   const verified = Boolean(verifiedEmail && verifiedEmail.toLowerCase() === itemsData[0].email.toLowerCase());
   return { batchId, batchTitle, groupName, items, batchToken, verified };
 }
@@ -86,7 +88,7 @@ export async function upload(
   token: string,
   request: Request,
   mailer: Mailer = sendMail,
-  { deferEmail = false, verifiedEmail = null }: { deferEmail?: boolean; verifiedEmail?: string | null } = {},
+  { deferEmail = false, verifiedEmail = null, memberId = null }: { deferEmail?: boolean; verifiedEmail?: string | null; memberId?: string | null } = {},
 ) {
   const payload = unseal(token, 'upload');
   invariant(payload.id === id && payload.ids.length === 1, 403, 'This upload link belongs to another print.');
@@ -96,7 +98,7 @@ export async function upload(
   let claimed: Job | undefined;
   try {
     [claimed] = await sql`UPDATE jobs SET upload_state = 'uploading'
-      WHERE id = ${id} AND upload_state = 'reserved' AND status = 'pending_confirmation' AND upload_expires_at > ${Date.now()}
+      WHERE id = ${id} AND member_id IS ${memberId} AND upload_state = 'reserved' AND status = 'pending_confirmation' AND upload_expires_at > ${Date.now()}
       RETURNING *`;
     invariant(claimed, 409, 'This upload has already been used or has expired. Submit a new print.');
     await storeUpload(request, claimed.storage_key, claimed.file_size, claimed.upload_expires_at);
@@ -107,12 +109,13 @@ export async function upload(
     if (deferEmail) {
       return { id, uploaded: true };
     }
-    if (verifiedEmail && verifiedEmail.toLowerCase() === updated.email.toLowerCase()) {
+    if (memberId || (verifiedEmail && verifiedEmail.toLowerCase() === updated.email.toLowerCase())) {
       const now = Date.now();
       const queuedJob = await sql.begin(async tx => {
         const [job] = await tx`UPDATE jobs
           SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now}, version = version + 1
-          WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+          WHERE id = ${id} AND member_id IS ${memberId}
+            AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
           RETURNING *`;
         invariant(job, 410, 'The submission expired. Please submit again.');
         await recordQueuePush(tx, [id], now);
@@ -134,8 +137,8 @@ export async function upload(
     logFailure('submission.failed', e, { jobId: id });
     if (claimed) {
       try {
-        await sql`DELETE FROM jobs WHERE id = ${id} AND status = 'pending_confirmation'`;
-        await removeFile(claimed.storage_key);
+        const removed = await sql`DELETE FROM jobs WHERE id = ${id} AND status = 'pending_confirmation' RETURNING storage_key`;
+        for (const row of removed) await removeFile(row.storage_key);
       } catch (cleanupError) {
         logError('submission.cleanup_failed', cleanupError, { jobId: id });
         throw new HttpError(500, 'The submission failed and cleanup could not finish. Please contact the operator.', { cause: e });
@@ -148,14 +151,14 @@ export async function upload(
 export async function finalizeBatch(
   batchToken: string,
   mailer: Mailer = sendMail,
-  { verifiedEmail = null }: { verifiedEmail?: string | null } = {},
+  { verifiedEmail = null, memberId = null }: { verifiedEmail?: string | null; memberId?: string | null } = {},
 ) {
   const payload = unseal(batchToken, 'upload');
   const ids = payload.ids;
   const sql = await db();
   const jobs: Job[] = [];
   for (const id of ids) {
-    const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id}`;
+    const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id} AND member_id IS ${memberId}`;
     invariant(job, 410, 'One or more prints in this batch are no longer available. Please submit again.');
     invariant(job.status === 'pending_confirmation' && job.upload_expires_at > Date.now(), 410, 'The batch upload expired. Please try again.');
     invariant(job.upload_state === 'uploaded', 409, 'All files in the batch must finish uploading before sending the confirmation email.');
@@ -163,7 +166,7 @@ export async function finalizeBatch(
   }
   const expiry = Date.now() + 86400000;
   try {
-    if (verifiedEmail && jobs.every(j => j.email.toLowerCase() === verifiedEmail.toLowerCase())) {
+    if (memberId || (verifiedEmail && jobs.every(j => j.email.toLowerCase() === verifiedEmail.toLowerCase()))) {
       const now = Date.now();
       const updatedJobs = await sql.begin(async tx => {
         const updated: Job[] = [];
@@ -171,7 +174,8 @@ export async function finalizeBatch(
           const id = ids[i];
           const [queuedJob]: Job[] = await tx`UPDATE jobs
             SET upload_state = 'ready', status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
-            WHERE id = ${id} AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
+            WHERE id = ${id} AND member_id IS ${memberId}
+              AND upload_state = 'uploaded' AND status = 'pending_confirmation' AND upload_expires_at > ${now}
             RETURNING *`;
           invariant(queuedJob, 410, 'The batch upload expired. Please try again.');
           updated.push(queuedJob);
@@ -205,7 +209,8 @@ export async function finalizeBatch(
     logFailure('submission.failed', e, { jobId: ids[0] });
     try {
       for (const job of jobs) {
-        const removed = await sql`DELETE FROM jobs WHERE id = ${job.id} AND status = 'pending_confirmation' RETURNING storage_key`;
+        const removed = await sql`DELETE FROM jobs WHERE id = ${job.id} AND member_id IS ${memberId}
+          AND status = 'pending_confirmation' RETURNING storage_key`;
         for (const row of removed) await removeFile(row.storage_key);
       }
     } catch (cleanupError) {
@@ -241,7 +246,8 @@ export async function confirmation(token: string, commit = false) {
       const newIds: string[] = [];
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i];
-        const rows = await tx`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1
+        const rows = await tx`UPDATE jobs SET status = 'queued', confirmed_at = ${now}, queued_at = ${now + i}, version = version + 1,
+          member_id = COALESCE(member_id, (SELECT member_id FROM member_emails WHERE email = lower(trim(jobs.email))))
           WHERE id = ${id} AND status = 'pending_confirmation' AND upload_state = 'ready' AND pending_expires_at > ${now} RETURNING *`;
         if (rows.length) {
           updatedJobs.push(rows[0] as Job);
@@ -299,6 +305,7 @@ export async function updateStatus(id: string, next: Status, version: number, op
     invariant(transitions[job.status as Status]?.includes(next), 400, 'That status transition is not allowed.');
     const now = Date.now();
     const [updated]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
+      started_at = CASE WHEN ${next} = 'printing' THEN COALESCE(started_at, ${now}) ELSE started_at END,
       queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${id} RETURNING *`;
     const [event] = await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
       VALUES (${id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback}) RETURNING id`;
@@ -381,6 +388,7 @@ export async function batchUpdateStatus(
         }
         const now = Date.now();
         const [updatedJob]: Job[] = await tx`UPDATE jobs SET status = ${next}, version = version + 1,
+          started_at = CASE WHEN ${next} = 'printing' THEN COALESCE(started_at, ${now}) ELSE started_at END,
           queued_at = ${next === 'queued' ? now : job.queued_at} WHERE id = ${item.id} RETURNING *`;
         const [event] = await tx`INSERT INTO job_events (job_id, previous_status, next_status, operator_id, created_at, feedback)
           VALUES (${item.id}, ${job.status}, ${next}, ${operator}, ${now}, ${feedback}) RETURNING id`;

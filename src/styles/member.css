@@ -1,0 +1,259 @@
+.site-header.has-account {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: clamp(16px, 3vw, 40px);
+}
+
+.site-header.has-account nav {
+  gap: 8px clamp(12px, 2vw, 28px);
+  flex-wrap: wrap;
+}
+
+.member-account {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  min-width: 0;
+  color: var(--ink);
+  font-size: .85rem;
+}
+
+.member-account-name {
+  min-width: 0;
+  max-width: 20ch;
+  padding-right: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-account form {
+  border-inline-start: 1px solid var(--line);
+  padding-inline-start: 4px;
+}
+
+.member-sign-out {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  min-height: 36px;
+  padding: 6px 8px;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.member-sign-out:hover,
+.member-sign-out:focus-visible {
+  background: #f8e9e7;
+  color: #9c3026;
+}
+
+.member-sign-out:focus-visible,
+.member-print-action summary:focus-visible,
+.member-find-prints summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.member-print-action summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 650;
+}
+
+.member-print-action summary::-webkit-details-marker {
+  display: none;
+}
+.member-login {
+  max-width: 440px;
+}
+
+.sign-in-options form {
+  display: grid;
+}
+
+.sign-in-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-block: 20px;
+  font-size: .85rem;
+  color: var(--ink);
+}
+
+.sign-in-divider::before,
+.sign-in-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.member-login h2 {
+  font-size: 1.2rem;
+}
+
+.member-login button:not([hidden]) {
+  margin-top: 12px;
+}
+
+.member-find-prints {
+  margin-top: 24px;
+}
+
+.member-print,
+.member-find-prints {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: clamp(14px, 3vw, 24px);
+}
+
+.member-prints .notice:not(.error) {
+  background: #fff;
+  border-color: var(--line);
+  border-inline-start: 3px solid var(--ink);
+}
+
+.member-print .status {
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.member-print .status:is(.rejected, .failed) {
+  color: #874636;
+  border-color: #dcb99c;
+}
+
+.member-find-prints summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.member-find-prints code {
+  overflow-wrap: anywhere;
+}
+
+.member-find-prints form {
+  max-width: 400px;
+  margin-block: 12px;
+}
+
+.member-heading,
+.member-print-header,
+.member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.member-actions {
+  justify-content: flex-start;
+}
+
+.member-tabs {
+  margin-block: 20px;
+}
+
+.member-print-group,
+.member-print {
+  scroll-margin-top: 16px;
+  margin-block: 12px;
+}
+
+.member-print-batch {
+  border-left: 2px solid var(--line);
+  padding-left: 14px;
+  margin-block: 22px;
+}
+
+.member-print-batch > h2 {
+  margin-bottom: 8px;
+}
+
+.member-print-header h2,
+.member-print-header h3 {
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+  overflow-wrap: anywhere;
+}
+
+.member-print-header > div {
+  min-width: 0;
+}
+
+.member-print-header p {
+  margin: 0;
+}
+
+.member-print-action {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.member-print-action summary::before {
+  content: '+';
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.member-print-action[open] summary::before {
+  content: '−';
+}
+
+.member-print-action form {
+  margin-top: 12px;
+}
+
+.member-print-action fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.member-print-action fieldset[disabled] {
+  opacity: .8;
+}
+
+[data-support-angle][hidden] {
+  display: none;
+}
+
+.member-cancel summary,
+.member-cancel button {
+  color: #874636;
+}
+
+.member-print:target,
+.member-print-batch:target {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .site-header.has-account {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 8px;
+  }
+
+  .site-header.has-account nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: flex-start;
+  }
+
+  .member-account {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
+    font-size: .8rem;
+  }
+}

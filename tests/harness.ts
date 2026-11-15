@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import webPush from 'web-push';
 
-export async function startHarness({ push = false }: { push?: boolean } = {}) {
+export async function startHarness({ push = false, legacyAuth = true }: { push?: boolean; legacyAuth?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'printhive-e2e-'));
   const messages: string[] = [], sockets = new Set<Socket>();
   let rejectMail = false;
@@ -35,7 +35,9 @@ export async function startHarness({ push = false }: { push?: boolean } = {}) {
   await new Promise<void>(resolve => portServer.close(() => resolve()));
   const origin = `http://127.0.0.1:${port}`;
   const pushKeys = push ? webPush.generateVAPIDKeys() : null;
-  const env = { ...process.env, NODE_ENV: 'test', APP_ORIGIN: origin, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir,
+  const env = { ...process.env, NODE_ENV: 'test', PRINTHIVE_TEST_LEGACY_AUTH: String(legacyAuth),
+    APP_ORIGIN: origin, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dir,
+    SERVER_CERT_PATH: '', SERVER_KEY_PATH: '',
     CONFIRMATION_SECRET: randomBytes(32).toString('hex'), SMTP_HOST: '127.0.0.1', SMTP_PORT: String(smtpPort), SMTP_SECURE: 'false',
     SMTP_USERNAME: '', SMTP_PASSWORD: '', SMTP_FROM: 'PrintHive <test@example.test>', TRUST_PROXY: 'false',
     VAPID_PUBLIC_KEY: pushKeys?.publicKey ?? '', VAPID_PRIVATE_KEY: pushKeys?.privateKey ?? '', VAPID_SUBJECT: push ? 'mailto:operator@example.test' : '' };
@@ -44,7 +46,8 @@ export async function startHarness({ push = false }: { push?: boolean } = {}) {
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
     if (code) throw new Error(stderr);
   }
-  await run(['scripts/migrate.ts']); await run(['scripts/operator.ts', 'operator'], 'test-password-12345');
+  await run(['scripts/migrate.ts']);
+  if (legacyAuth) await run(['scripts/operator.ts', 'operator'], 'test-password-12345');
   let child: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | undefined;
   let output = '';
   let drains: Promise<void>[] = [];

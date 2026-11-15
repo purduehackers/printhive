@@ -5,6 +5,7 @@ import { rateLimit } from './http';
 import { cancellationMessage, sendMail, type Mailer } from './mail';
 import { seal, unseal } from './tokens';
 import { MAX_BATCH_SIZE, type Job } from '../shared';
+import { recordQueuePush } from './push';
 
 interface CancellationItem { id: string; version: number }
 interface CancellationRequest { id: string; items: string; expires_at: number; consumed_at: number | null }
@@ -20,7 +21,8 @@ export async function requestCancellation(rawIds: unknown, rawEmail: unknown, ma
   for (const id of rawIds) {
     const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${id} AND confirmed_at IS NOT NULL`;
     invariant(job && job.email.toLowerCase() === email, 400, 'The selected prints do not match that submission email. Check your selection and email.');
-    invariant(job.status === 'queued', 409, 'Only queued prints can be canceled here. If printing has started, contact an operator.');
+    invariant(job.status === 'queued' && job.started_at == null, 409, 'Only queued prints that have never started can be canceled.');
+    invariant(job.member_id == null, 409, 'Open Manage prints to cancel this print.');
     jobs.push(job);
   }
   const first = jobs[0];
@@ -58,7 +60,8 @@ export async function cancellation(token: string, commit = false) {
     }
     if (request.consumed_at !== null) return { jobs, already: true };
     for (let i = 0; i < jobs.length; i++) {
-      invariant(jobs[i].status === 'queued', 409, 'One or more selected prints are no longer queued. Nothing was canceled with this link. If printing has started, contact an operator.');
+      invariant(jobs[i].status === 'queued' && jobs[i].started_at == null, 409, 'One or more selected prints are no longer queued or have started. Nothing was canceled.');
+      invariant(jobs[i].member_id == null, 409, 'Open Manage prints to cancel linked prints.');
       invariant(jobs[i].version === items[i].version, 409, 'One or more selected prints have changed. Nothing was canceled with this link. Return to the queue and request a new link.');
     }
     if (!commit) return { jobs, already: false };
@@ -71,6 +74,7 @@ export async function cancellation(token: string, commit = false) {
         VALUES (${job.id}, 'queued', 'canceled', NULL, ${now}, 'Canceled by submitter via email confirmation.')`;
       updated.push(changed);
     }
+    await recordQueuePush(tx, updated.map(job => job.id), now, 'cancellation');
     await tx`UPDATE cancellation_requests SET consumed_at = ${now} WHERE id = ${id}`;
     return { jobs: updated, already: false };
   });

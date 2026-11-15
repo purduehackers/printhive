@@ -1,7 +1,17 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import Login from '../../components/Login';
-import { currentOperator } from '../../lib/server/auth';
+import { currentOperator, legacyTestAuth } from '../../lib/server/auth';
+import { currentMember } from '../../lib/server/member-auth';
 if (await currentOperator(Astro)) return Astro.redirect('/operator');
+const member = await currentMember(Astro);
+if (!member && !legacyTestAuth()) return Astro.redirect('/sign-in?next=/operator');
+if (member) Astro.response.status = 403;
 ---
-<Layout title="Operator sign in" active="operator"><section class="login-panel"><h1>Operator sign in</h1><Login client:load /><noscript>Enable JavaScript to sign in.</noscript><p class="small muted">Contact an administrator for an operator account.</p></section></Layout>
+<Layout title="Operator sign in" active="operator">
+  <section class="login-panel">
+    <h1>Operator sign in</h1>
+    {member ? <p>Operator access requires signing in with a Purdue Hackers ID organizer account.</p> :
+      <><Login client:load /><noscript>Enable JavaScript to sign in.</noscript><p class="small muted">Contact an administrator for an operator account.</p></>}
+  </section>
+</Layout>

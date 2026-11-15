@@ -2,27 +2,27 @@
 import Layout from '../../layouts/Layout.astro';
 import OperatorQueue from '../../components/OperatorQueue';
 import OperatorNotifications from '../../components/OperatorNotifications';
-import { currentOperator } from '../../lib/server/auth';
+import { currentOperator, legacyTestAuth } from '../../lib/server/auth';
+import { currentMember } from '../../lib/server/member-auth';
 import { operatorQueue } from '../../lib/server/jobs';
 import { STATUSES, effectiveGroupName, reference } from '../../lib/shared';
 import '../../styles/print-thumbnails.css';
 
 const operator = await currentOperator(Astro);
 if (!operator) return Astro.redirect('/operator/login');
+const member = await currentMember(Astro);
 const { jobs, filter, page, hasNext, revision } = await operatorQueue(Astro.url.searchParams.get('status'), Astro.url.searchParams.get('page'));
 ---
 <Layout title="Operator dashboard" active="operator">
   <div class="page-heading operator-heading">
-    <div>
-      <h1>Print jobs</h1>
-      <p>Signed in as <strong>{operator.username}</strong></p>
-    </div>
+    <h1>Print jobs</h1>
     <div class="operator-actions">
       <a class="button secondary" href="/operator/manage-materials">Manage materials</a>
-      <a class="button secondary" href="/operator/manage-operators">Manage operators</a>
-      <form method="post" action="/api/logout">
+      <a class="button secondary" href="/operator/hive-members">Manage HIVE members</a>
+      {legacyTestAuth() && <a class="button secondary" href="/operator/manage-operators">Manage operators</a>}
+      {!member && <form method="post" action="/api/logout">
         <button class="button secondary">Sign out</button>
-      </form>
+      </form>}
     </div>
   </div>
 

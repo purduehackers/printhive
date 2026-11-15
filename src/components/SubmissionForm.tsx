@@ -45,11 +45,13 @@ export default function SubmissionForm({
   initialVerifiedEmail = null,
   initialVerifiedToken = null,
   initialVerifiedExpires = null,
+  accountEmail = false,
 }: {
   initialMaterials?: Material[];
   initialVerifiedEmail?: string | null;
   initialVerifiedToken?: string | null;
   initialVerifiedExpires?: number | null;
+  accountEmail?: boolean;
 }) {
   const materials =
     initialMaterials && initialMaterials.length > 0
@@ -75,6 +77,7 @@ export default function SubmissionForm({
     [success, setSuccess] = useState(false),
     [autoConfirmed, setAutoConfirmed] = useState(false),
     [reviewing, setReviewing] = useState(false);
+  const [manageHref, setManageHref] = useState('/manage-prints');
   const xhrRef = useRef<XMLHttpRequest | null>(null),
     controllerRef = useRef<AbortController | null>(null);
   const [title, setTitle] = useState('');
@@ -90,6 +93,7 @@ export default function SubmissionForm({
   );
 
   useEffect(() => {
+    if (accountEmail) return;
     try {
       if (initialVerifiedEmail && initialVerifiedToken) {
         localStorage.setItem(
@@ -123,7 +127,7 @@ export default function SubmissionForm({
     } catch {
       /* Ignore storage errors */
     }
-  }, [initialVerifiedEmail, initialVerifiedToken, initialVerifiedExpires]);
+  }, [initialVerifiedEmail, initialVerifiedToken, initialVerifiedExpires, accountEmail]);
 
   const isEmailVerified = Boolean(
     verifiedEmail &&
@@ -471,6 +475,7 @@ export default function SubmissionForm({
           activeVerifiedToken,
         );
         setAutoConfirmed(Boolean(uploadRes?.confirmed));
+        setManageHref('/manage-prints?print=' + reservation.id + '#print-' + reservation.id);
       } else {
         const response = await fetch('/api/submissions/batch', {
           method: 'POST',
@@ -537,6 +542,7 @@ export default function SubmissionForm({
         if (!finalizeRes.ok)
           throw new Error(finalizeBody.error ?? 'Failed to finalize batch.');
         setAutoConfirmed(Boolean(finalizeBody?.confirmed));
+        setManageHref('/manage-prints?batch=' + reservation.batchId + '#batch-' + reservation.batchId);
       }
       setSuccess(true);
     } catch (e) {
@@ -633,9 +639,12 @@ export default function SubmissionForm({
         <p>
           We’ll email <strong>{email}</strong> with status updates.
         </p>
-        <a href="/" className="button primary">
-          Back to queue
-        </a>
+        {accountEmail && (
+          <a href={manageHref} className="button primary">
+            {files.length > 1 ? 'Manage this submission' : 'Manage this print'}
+          </a>
+        )}
+        <a href="/" className={accountEmail ? 'text-button' : 'button primary'}>{accountEmail ? 'View queue' : 'Back to queue'}</a>
         <a href="/submit" className="text-button">
           Submit another print
         </a>
@@ -698,7 +707,7 @@ export default function SubmissionForm({
                   </dt>
                   <dd className="review-value-text">{title.trim()}</dd>
                 </div>
-                <div>
+                {!accountEmail && <div>
                   <dt>Purdue email</dt>
                   <dd className="review-value-text">
                     <span>{email.trim()}</span>
@@ -706,7 +715,7 @@ export default function SubmissionForm({
                       <span className="verified-email-badge">✓ Verified</span>
                     )}
                   </dd>
-                </div>
+                </div>}
                 <div>
                   <dt>Total parts</dt>
                   <dd className="review-value-text">
@@ -989,7 +998,7 @@ export default function SubmissionForm({
                 />
               </label>
             </fieldset>
-            <fieldset disabled={busy} className="form-section">
+            {!accountEmail && <fieldset disabled={busy} className="form-section">
               <legend>Contact</legend>
               <label>
                 <span className="contact-label-row">
@@ -1035,7 +1044,7 @@ export default function SubmissionForm({
                   title and print settings are public.
                 </p>
               )}
-            </fieldset>
+            </fieldset>}
           </>
         )}
         {message && (

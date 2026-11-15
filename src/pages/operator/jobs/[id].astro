@@ -5,8 +5,27 @@ import SlicerControls from '../../../components/SlicerControls';
 import NotificationRetry from '../../../components/NotificationRetry';
 import { currentOperator } from '../../../lib/server/auth';
 import { db } from '../../../lib/server/db';
+import { assignLegacyPrint } from '../../../lib/server/member-jobs';
+import { smallBody } from '../../../lib/server/http';
+import { HttpError, invariant } from '../../../lib/server/errors';
+import { logFailure } from '../../../lib/server/log';
 import { effectiveGroupName, reference, resolveColor, summarizeGroupStatus, supportLabel, type Job, type Status } from '../../../lib/shared';
-if (!await currentOperator(Astro)) return Astro.redirect('/operator/login');
+const operator = await currentOperator(Astro);
+if (!operator) return Astro.redirect('/operator/login');
+let linkError = '';
+if (Astro.request.method === 'POST') {
+  try {
+    const form = await smallBody(Astro.request, false);
+    const memberId = form.get('member_id')?.trim().toLowerCase();
+    invariant(memberId && /^[a-f0-9-]{36}$/.test(memberId), 400, 'Enter the member’s account ID from Manage prints.');
+    await assignLegacyPrint(Astro.params.id ?? '', memberId, operator.id);
+    return Astro.redirect(Astro.url.pathname + '?linked=1', 303);
+  } catch (error) {
+    logFailure('job.link_failed', error);
+    Astro.response.status = error instanceof HttpError ? error.status : 500;
+    linkError = error instanceof HttpError ? error.message : 'PrintHive could not link this print.';
+  }
+}
 const sql = await db();
 const [job]: Job[] = await sql`SELECT * FROM jobs WHERE id = ${Astro.params.id ?? ''} AND confirmed_at IS NOT NULL`;
 if (!job) { Astro.response.status = 404; }
@@ -30,6 +49,15 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
     <h1>{job?.title ?? 'Print not found.'}</h1>
     {job && <p>{job.email}</p>}
   </div>
+  {linkError && <p class="notice error" role="alert">{linkError}</p>}
+  {Astro.url.searchParams.has('linked') && <p class="notice" role="status">Print linked to the member account.</p>}
+  {job && !job.member_id && <details class="detail-card">
+    <summary>Link legacy print</summary>
+    <form method="post">
+      <label>Member account ID <input name="member_id" maxlength="36" required /></label>
+      <button class="button secondary">Link print</button>
+    </form>
+  </details>}
   {job && (
     <div class="detail-grid">
       <div>
@@ -77,12 +105,12 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
           </section>
         )}
         <section class="detail-card">
-          <h2>Status history</h2>
+          <h2>Print history</h2>
           <ul class="history">
             {events.map(event => (
               <li>
-                <strong>{event.previous_status} → {event.next_status}</strong>
-                <span>{event.username ?? (event.operator_id === null && event.next_status === 'canceled' ? 'Submitter' : 'Operator')} · {new Date(event.created_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
+                {event.previous_status !== event.next_status && <strong>{event.previous_status} → {event.next_status}</strong>}
+                <span>{event.username ?? (event.operator_id === null ? 'Submitter' : 'Operator')} · {new Date(event.created_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
                 {event.notification_status === 'failed' && (
                   <span class="notification-failed-badge">email failed <NotificationRetry jobId={job.id} eventId={event.id} client:load /></span>
                 )}
@@ -90,7 +118,7 @@ const groupSummary = groupJobs.length > 1 ? summarizeGroupStatus(groupJobs as { 
               </li>
             ))}
             <li>
-              <strong>Email confirmed · joined the queue</strong>
+              <strong>Joined the queue</strong>
               <span>{new Date(job.confirmed_at).toLocaleString('en-US', {timeZone: 'America/Indiana/Indianapolis'})} ET</span>
             </li>
           </ul>

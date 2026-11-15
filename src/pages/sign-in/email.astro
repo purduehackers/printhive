@@ -1,0 +1,46 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { currentMember, hiveSignInDestination, previewMemberLink, redeemMemberLink } from '../../lib/server/member-auth';
+import { clientIP, rateLimit, smallBody } from '../../lib/server/http';
+import { HttpError } from '../../lib/server/errors';
+import { logFailure } from '../../lib/server/log';
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+Astro.response.headers.set('Referrer-Policy', 'no-referrer');
+let token = Astro.url.searchParams.get('token') ?? '', error = '';
+let next = hiveSignInDestination(Astro.url.searchParams.get('next'));
+const member = await currentMember(Astro);
+if (Astro.request.method === 'POST') {
+  try {
+    rateLimit('redeem-member-link:' + clientIP(Astro), 20, 900000);
+    const form = await smallBody(Astro.request, false);
+    token = form.get('token') ?? '';
+    next = hiveSignInDestination(form.get('next'));
+    const result = await redeemMemberLink(Astro, token, member);
+    return Astro.redirect(result === 'linked' ? '/manage-prints?linked=1#find-prints' : next, 303);
+  } catch (cause) {
+    logFailure('member.email_link_failed', cause);
+    Astro.response.status = cause instanceof HttpError ? cause.status : 500;
+    error = cause instanceof HttpError ? cause.message : 'PrintHive could not open this link. Try again shortly.';
+  }
+}
+const link = await previewMemberLink(token);
+if (!link && !error) {
+  Astro.response.status = 410;
+  error = 'This link is invalid, expired, or was already used.';
+}
+---
+<Layout title="Continue to PrintHive">
+  <section class="login-panel member-login">
+    <h1>Continue to PrintHive</h1>
+    {error && <p class="notice error" role="alert">{error}</p>}
+    {link && <form method="post" action="/sign-in/email">
+      <p>{link.member_id ? 'Link' : 'Sign in as'} <strong>{link.email}</strong></p>
+      <input type="hidden" name="token" value={token} />
+      <input type="hidden" name="next" value={next} />
+      <button type="submit" class="button primary">{link.member_id ? 'Link email' : 'Sign in'}</button>
+    </form>}
+    {member && <a href="/manage-prints#find-prints">Back to Manage Prints</a>}
+    {!member && <a href={'/sign-in?' + new URLSearchParams({ next })}>{link ? 'Back to sign in' : 'Request a new sign-in link'}</a>}
+  </section>
+</Layout>

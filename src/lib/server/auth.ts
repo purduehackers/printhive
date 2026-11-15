@@ -4,11 +4,20 @@ import { db } from './db';
 import { config } from './config';
 import { invariant } from './errors';
 import { revokeDevice } from './push';
+import { currentMember, signOutMember } from './member-auth';
 
 export const SESSION_COOKIE = 'printhive_session';
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
 export interface Operator { id: number; username: string }
+export const legacyTestAuth = () => process.env.NODE_ENV === 'test' && process.env.PRINTHIVE_TEST_LEGACY_AUTH === 'true';
+
 export async function currentOperator(context: Pick<APIContext, 'cookies'>): Promise<Operator | null> {
+  const member = await currentMember(context);
+  if (member?.provider === 'purduehackers' && member.organizer) {
+    const [operator] = await (await db())`SELECT id, username FROM operators WHERE id_subject = ${member.subject} AND active = 1`;
+    return operator ? { ...operator, username: member.email ?? 'Purdue Hackers organizer' } : null;
+  }
+  if (!legacyTestAuth()) return null;
   const token = context.cookies.get(SESSION_COOKIE)?.value;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const sql = await db();
@@ -24,6 +33,7 @@ export async function requireOperator(context: Pick<APIContext, 'cookies'>) {
 let dummyHash: Promise<string> | undefined;
 let verifying = 0;
 export async function login(context: APIContext, username: unknown, password: unknown) {
+  invariant(legacyTestAuth(), 404, 'Use Purdue Hackers ID to sign in as an operator.');
   invariant(typeof username === 'string' && /^[a-zA-Z0-9_.-]{1,64}$/.test(username) && typeof password === 'string' && password.length <= 1024, 400, 'Enter a valid username and password.');
   invariant(verifying < 2, 429, 'Login is busy. Please try again shortly.');
   verifying++;
@@ -31,7 +41,7 @@ export async function login(context: APIContext, username: unknown, password: un
     const sql = await db();
     const [operator] = await sql`SELECT * FROM operators WHERE username = ${username}`;
     dummyHash ??= Bun.password.hash(randomBytes(32).toString('hex'), { algorithm: 'argon2id', memoryCost: 65536, timeCost: 3 });
-    const valid = await Bun.password.verify(password, operator?.password_hash ?? await dummyHash);
+    const valid = await Bun.password.verify(password, operator?.password_hash || await dummyHash);
     invariant(valid && operator?.active === 1, 401, 'Incorrect username or password.');
     const token = randomBytes(32).toString('hex'), expires = Date.now() + config().sessionTTL;
     await sql`DELETE FROM sessions WHERE expires_at <= ${Date.now()}`;
@@ -49,6 +59,7 @@ export async function login(context: APIContext, username: unknown, password: un
 }
 export async function logout(context: APIContext) {
   await revokeDevice(context);
+  await signOutMember(context);
   const token = context.cookies.get(SESSION_COOKIE)?.value;
   if (token) { const sql = await db(); await sql`DELETE FROM sessions WHERE token_hash = ${digest(token)}`; }
   context.cookies.delete(SESSION_COOKIE, { path: '/' });

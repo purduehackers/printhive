@@ -8,7 +8,19 @@ export interface AllowedMaterial {
   defaultColor?: string;
 }
 
-export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
+export function normalizeEmail(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const email = input.trim().toLowerCase();
+  return email.length <= 254 && /^[a-z0-9.!#$%&'*+/=?^_\x60{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(email)
+    && !email.startsWith('.') && !email.includes('..') && !email.includes('.@') ? email : null;
+}
+
+export function purdueEmail(input: unknown): string | null {
+  const email = normalizeEmail(input);
+  return email?.endsWith('@purdue.edu') ? email : null;
+}
+
+export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[], memberOwned = false) {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid submission.');
   const d = input as Record<string, unknown>;
   const string = (key: string, max: number, optional = false) => {
@@ -22,8 +34,8 @@ export function metadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
     invariant(values.includes(value as T), 400, `Invalid ${key.replaceAll('_', ' ')}.`);
     return value as T;
   };
-  const email = string('email', 254).toLowerCase();
-  invariant(/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@purdue\.edu$/.test(email) && !email.startsWith('.') && !email.includes('..') && !email.includes('.@'), 400, 'Use your @purdue.edu email address.');
+  const email = (memberOwned ? normalizeEmail : purdueEmail)(d.email);
+  invariant(email, 400, memberOwned ? 'A verified account email is required.' : 'Use your @purdue.edu email address.');
   const filename = string('original_filename', 255);
   invariant(/\.stl$/i.test(filename) && !/[\/\\\r\n]/.test(filename), 400, 'Choose an STL file.');
   invariant(Number.isSafeInteger(d.file_size) && Number(d.file_size) > 0 && Number(d.file_size) <= MAX_FILE_BYTES, 400, 'The STL must be between 1 byte and 500 MiB.');
@@ -77,7 +89,7 @@ export function validateGroupName(input: unknown): string | null {
   return trimmed;
 }
 
-export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial[]) {
+export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial[], memberOwned = false) {
   invariant(input && typeof input === 'object' && !Array.isArray(input), 400, 'Invalid batch submission.');
   const d = input as Record<string, unknown>;
   invariant(Array.isArray(d.items) && d.items.length >= 1 && d.items.length <= MAX_BATCH_SIZE, 400, `Choose between 1 and ${MAX_BATCH_SIZE} STL files.`);
@@ -121,7 +133,7 @@ export function batchMetadata(input: unknown, allowedMaterials?: AllowedMaterial
         support_angle: item.support_angle === undefined ? d.support_angle : item.support_angle,
         copies: item.copies ?? d.copies,
         mirror: item.mirror ?? d.mirror,
-      }, allowedMaterials),
+      }, allowedMaterials, memberOwned),
       batch_title: batchTitle,
       group_name: groupName,
     };

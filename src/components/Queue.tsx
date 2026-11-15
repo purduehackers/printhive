@@ -1,30 +1,14 @@
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import '../styles/queue-cancellation.css';
 import { selectListItem, type SelectionModifiers } from '../lib/list-selection';
+import PrintSettingsSummary from './PrintSettingsSummary';
 import {
   effectiveGroupName,
   reference,
-  resolveColor,
   summarizeGroupStatus,
   type GroupStatusSummary,
   type PublicJob,
 } from '../lib/shared';
-
-function Settings({ job }: { job: PublicJob }) {
-  return (
-    <div className="job-settings">
-      <span>{job.material ?? 'PLA'}</span>
-      <span>
-        <i className={`swatch ${job.color.toLowerCase()}`} style={{ backgroundColor: resolveColor(job.color) }} />
-        {job.color}
-      </span>
-      <span>{job.layer_height} mm</span>
-      <span>{job.infill}% infill</span>
-      <span>{job.walls} walls</span>
-      <span>{job.copies} {job.copies === 1 ? 'copy' : 'copies'}</span>
-    </div>
-  );
-}
 
 function getBatchKey(job: PublicJob): string | null {
   if (job.batch_id) return `batch:${job.batch_id}`;
@@ -32,7 +16,7 @@ function getBatchKey(job: PublicJob): string | null {
   return group ? `group:${group}` : null;
 }
 
-export default function Queue({ initial }: { initial: PublicJob[] }) {
+export default function Queue({ initial, legacyCancellation = false }: { initial: PublicJob[]; legacyCancellation?: boolean }) {
   const [jobs, setJobs] = useState(initial), [error, setError] = useState('');
   const [selecting, setSelecting] = useState(false), [selected, setSelected] = useState<string[]>([]);
   const [email, setEmail] = useState(''), [sending, setSending] = useState(false);
@@ -150,7 +134,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
                 {summary && summary.total > 1 && <span className="small muted">{summary.label}</span>}
               </div>
             )}
-            <Settings job={job} />
+            <PrintSettingsSummary job={job} />
           </article>
         );
       })}</div> : <div className="empty-state">No prints in progress.</div>}
@@ -158,7 +142,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
     <section aria-labelledby="queue-heading">
       <div className="section-heading queue-section-heading">
         <h2 id="queue-heading">Queued <span className="count">{queued.length}</span></h2>
-        {!selecting && queued.length > 0 && <button className="queue-cancel-button" type="button" ref={topCancelButton}
+        {legacyCancellation && !selecting && queued.length > 0 && <button className="queue-cancel-button" type="button" ref={topCancelButton}
           onClick={startSelection}>Cancel prints</button>}
       </div>
       {selecting && <p id="cancel-selection-help" className="small muted">Select prints to cancel from one submission.</p>}
@@ -196,12 +180,9 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
                   </span>
                 )}
               </div>
-              <Settings job={job} />
+              <PrintSettingsSummary job={job} />
               {selecting && job.batch_title && job.batch_title !== groupLabel && <div className="small muted">Submission: {job.batch_title}</div>}
-              <div className="small muted extra-settings">
-                Supports: {job.supports === 'operator' ? 'operator decides' : job.supports}
-                {summary && summary.total > 1 && summary.mixed ? ` · Batch status: ${summary.label}` : ''}
-              </div>
+              {summary && summary.total > 1 && summary.mixed && <div className="small muted">Batch status: {summary.label}</div>}
             </div>
             <span className="mono small muted">#{reference(job.id)}</span>
             {selecting && <label className="queue-cancel-target" htmlFor={`cancel-${job.id}`}
@@ -246,7 +227,7 @@ export default function Queue({ initial }: { initial: PublicJob[] }) {
       {message && <p className="notice" role="status" ref={receipt}>{message}</p>}
       <div className="queue-footer">
         <p className="small muted queue-refresh">Updates every 15 seconds.</p>
-        {!selecting && queued.length > 0 && <div className={`queue-footer-actions${topCancelInView ? ' is-redundant' : ''}`}
+        {legacyCancellation && !selecting && queued.length > 0 && <div className={`queue-footer-actions${topCancelInView ? ' is-redundant' : ''}`}
           aria-hidden={topCancelInView} inert={topCancelInView}>
           <button className="queue-cancel-button" type="button" onClick={startSelection}>Cancel prints</button>
         </div>}

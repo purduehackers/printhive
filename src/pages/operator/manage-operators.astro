@@ -1,10 +1,11 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import OperatorManager from '../../components/OperatorManager';
-import { currentOperator } from '../../lib/server/auth';
+import { currentOperator, legacyTestAuth } from '../../lib/server/auth';
 import { listOperators } from '../../lib/server/operators';
 const operator = await currentOperator(Astro);
 if (!operator) return Astro.redirect('/operator/login');
+if (!legacyTestAuth()) return Astro.redirect('/operator');
 const operators = await listOperators();
 ---
 <Layout title="Manage operators" active="operator">

@@ -1,0 +1,125 @@
+---
+import Layout from '../layouts/Layout.astro';
+import MemberPrintCard from '../components/MemberPrintCard.astro';
+import { currentMember, sendMemberLink } from '../lib/server/member-auth';
+import { changeMemberPrint, memberJobs } from '../lib/server/member-jobs';
+import { listMaterialsWithColors } from '../lib/server/materials';
+import { clientIP, rateLimit, smallBody } from '../lib/server/http';
+import { HttpError, invariant } from '../lib/server/errors';
+import { logFailure } from '../lib/server/log';
+import type { Job } from '../lib/shared';
+
+const member = await currentMember(Astro);
+if (!member) return Astro.redirect('/sign-in?next=/manage-prints');
+
+let error = '', failedId = '', draft: URLSearchParams | undefined;
+let conflict = false;
+let emailAction = false, linkEmail = '', linkError = '', linkSent = false;
+if (Astro.request.method === 'POST') {
+  try {
+    const form = await smallBody(Astro.request, false);
+    const action = form.get('action');
+    if (action === 'link-email') {
+      emailAction = true;
+      linkEmail = (form.get('email') ?? '').trim();
+      rateLimit('link-email:' + clientIP(Astro), 12, 900000);
+      await sendMemberLink(Astro, linkEmail, member);
+      linkSent = true;
+    } else {
+      const id = form.get('id') ?? '';
+      invariant(/^[a-f0-9-]{36}$/.test(id) && (action === 'settings' || action === 'cancellation'), 400, 'Invalid print change.');
+      failedId = id;
+      if (action === 'settings') draft = form;
+      const version = form.get('version');
+      invariant(version && /^\d+$/.test(version), 400, 'Reload the print before making changes.');
+      let filament: unknown;
+      if (action === 'settings') {
+        try { filament = JSON.parse(form.get('filament') ?? 'null'); } catch { /* Invalid selection. */ }
+        invariant(Array.isArray(filament) && filament.length === 2 && filament.every(value => typeof value === 'string'),
+          400, 'Choose an available filament.');
+      }
+      const [material, color] = Array.isArray(filament) ? filament : [];
+      const angle = form.get('support_angle');
+      await changeMemberPrint(member.id, id, Number(version), action, {
+        material, color, infill: Number(form.get('infill')), walls: Number(form.get('walls')),
+        layer_height: Number(form.get('layer_height')), supports: form.get('supports'),
+        support_angle: angle ? Number(angle) : null, copies: Number(form.get('copies')), notes: form.get('notes'),
+      });
+      const params = new URLSearchParams({ print: id, updated: action });
+      return Astro.redirect('/manage-prints?' + params + '#print-' + id, 303);
+    }
+  } catch (cause) {
+    logFailure('member.print_action_failed', cause);
+    Astro.response.status = cause instanceof HttpError ? cause.status : 500;
+    error = cause instanceof HttpError ? cause.message : 'PrintHive could not save the change.';
+    if (emailAction) {
+      linkError = cause instanceof HttpError ? cause.message : 'PrintHive could not send the verification link.';
+      error = '';
+    }
+    conflict = cause instanceof HttpError && cause.status === 409;
+  }
+}
+
+const [jobs, materials] = await Promise.all([memberJobs(member.id), listMaterialsWithColors()]);
+const isActive = (job: Job) => job.status === 'queued' || job.status === 'printing';
+const activeJobs = jobs.filter(isActive);
+const historyJobs = jobs.filter(job => !isActive(job));
+const print = Astro.url.searchParams.get('print');
+const batch = Astro.url.searchParams.get('batch');
+const selectedPrint = jobs.find(job => job.id === (failedId || print));
+const batchPrints = batch ? jobs.filter(job => job.batch_id === batch) : [];
+const history = selectedPrint ? !isActive(selectedPrint) :
+  batchPrints.length ? !batchPrints.some(isActive) : Astro.url.searchParams.get('view') === 'history';
+const visibleJobs = history ? historyJobs : activeJobs;
+const groups = new Map<string, Job[]>();
+for (const job of visibleJobs) {
+  const key = job.batch_id ?? job.id;
+  const group = groups.get(key);
+  if (group) group.push(job);
+  else groups.set(key, [job]);
+}
+const updated = Astro.url.searchParams.get('updated');
+---
+
+<Layout title="Manage prints" active="manage">
+  <div class="member-prints">
+  <div class="page-heading member-heading">
+    <h1>Manage prints</h1>
+    {member.email && <a class="button primary" href="/submit">Submit a print</a>}
+  </div>
+  {!member.email && <p class="notice"><a href="#find-prints">Verify a Purdue email</a> before you can submit a print.</p>}
+  <nav class="filter-tabs member-tabs" aria-label="Print views">
+    <a href="/manage-prints" aria-current={!history ? 'page' : undefined} class:list={[{ selected: !history }]}>Active ({activeJobs.length})</a>
+    <a href="/manage-prints?view=history" aria-current={history ? 'page' : undefined} class:list={[{ selected: history }]}>History ({historyJobs.length})</a>
+  </nav>
+  {error && !selectedPrint && <p class="notice error" role="alert">{error}</p>}
+  {visibleJobs.length === 0 && <div class="empty-state">
+    <p>{history ? 'No past prints yet.' : 'No active prints.'}</p>
+  </div>}
+  {Array.from(groups, ([key, entries]) => {
+    const first = entries[0];
+    return <section class:list={['member-print-group', { 'member-print-batch': first.batch_id }]} id={first.batch_id ? 'batch-' + key : undefined}
+      aria-label={first.batch_id ? first.batch_title ?? 'Print submission' : undefined}>
+      {first.batch_id && <h2>{first.batch_title ?? 'Print submission'} <span class="small">{entries.length} {entries.length === 1 ? 'print' : 'prints'}</span></h2>}
+      {entries.map(job => <MemberPrintCard job={job} materials={materials} grouped={Boolean(first.batch_id)}
+        draft={job.id === failedId ? draft : undefined}
+        conflict={job.id === failedId && conflict}
+        error={job.id === failedId ? error : ''}
+        message={job.id === print ? updated === 'settings' ? 'Print settings saved.' : updated === 'cancellation' ? 'Print canceled.' : '' : ''} />)}
+    </section>;
+  })}
+  <details id="find-prints" class="member-find-prints" open={!member.email || emailAction || Astro.url.searchParams.has('linked') || undefined}>
+    <summary>{member.email ? 'Missing a past print?' : 'Verify your Purdue email'}</summary>
+    {Astro.url.searchParams.has('linked') && <p class="notice" role="status">Email verified. Any matching submissions now appear in Manage Prints.</p>}
+    {linkError && <p class="notice error" role="alert">{linkError}</p>}
+    {linkSent && <p class="notice" role="status">Open the link sent to <strong>{linkEmail}</strong> in this browser within 15 minutes.</p>}
+    <form method="post" action="/manage-prints#find-prints">
+      <p>Verify a Purdue email to find past prints submitted with that address.</p>
+      <label>Purdue email <input name="email" type="email" autocomplete="email" maxlength="254" value={linkError ? linkEmail : ''} required /></label>
+      <button name="action" value="link-email" class="button secondary">Send verification link</button>
+    </form>
+    <p class="small muted">For help, give an organizer the print reference and your account ID <code>{member.id}</code>.</p>
+  </details>
+  </div>
+</Layout>
+

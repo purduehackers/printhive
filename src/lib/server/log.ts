@@ -7,7 +7,7 @@ type Details = Record<string, string | number | boolean | undefined>;
 function redact(value: string): string {
   const username = process.env.SMTP_USERNAME ?? '';
   const password = process.env.SMTP_PASSWORD ?? '';
-  const secrets = [password, username, process.env.CONFIRMATION_SECRET ?? ''];
+  const secrets = [password, username, process.env.CONFIRMATION_SECRET ?? '', process.env.PURDUE_HACKERS_CLIENT_SECRET ?? ''];
   if (password) secrets.push(Buffer.from(password).toString('base64'));
   if (username) secrets.push(Buffer.from(username).toString('base64'));
   if (password && username) secrets.push(Buffer.from(`\0${username}\0${password}`).toString('base64'));

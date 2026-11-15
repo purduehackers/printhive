@@ -3,8 +3,11 @@ import Layout from '../layouts/Layout.astro';
 import Queue from '../components/Queue';
 import { publicQueue } from '../lib/server/jobs';
 import { AVAILABLE_PRINTERS } from '../lib/shared';
+import { currentMember } from '../lib/server/member-auth';
+import { legacyTestAuth } from '../lib/server/auth';
 
-const jobs = await publicQueue();
+const [jobs, member] = await Promise.all([publicQueue(), currentMember(Astro)]);
+const signedIn = Boolean(member) || legacyTestAuth();
 const cells = [[0, -69.3], [-60, -34.65], [60, -34.65], [0, 0], [-60, 34.65], [60, 34.65], [0, 69.3]];
 const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 -13 22.5 -26 0 -13 -22.5 13 -22.5Z';
 ---
@@ -13,7 +16,7 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
     <div>
       <h1>HIVE<br /> <span>3d printing</span></h1>
       <div class="hero-actions">
-        <a class="button primary" href="/submit">Submit a print</a>
+        <a class="button primary" href={signedIn ? '/submit' : '/sign-in'}>{signedIn ? 'Submit a print' : 'Sign in'}</a>
         <a class="button secondary" href="#printers">Available printers</a>
       </div>
     </div>
@@ -38,7 +41,7 @@ const hexagon = 'M37 0 18.5 32 -18.5 32 -37 0 -18.5 -32 18.5 -32Z M26 0 13 22.5 
     </div>
   </section>
 
-  <Queue initial={jobs} client:load />
+  <Queue initial={jobs} legacyCancellation={legacyTestAuth()} client:load />
 
   <section id="printers" class="printers-section" aria-labelledby="printers-heading">
     <div class="section-heading">

@@ -4,9 +4,14 @@ import SubmissionForm from '../components/SubmissionForm';
 import { listMaterialsWithColors } from '../lib/server/materials';
 import { AVAILABLE_PRINTERS } from '../lib/shared';
 import { VERIFIED_EMAIL_COOKIE, unsealVerifiedEmail } from '../lib/server/tokens';
+import { currentMember } from '../lib/server/member-auth';
+import { legacyTestAuth } from '../lib/server/auth';
 
+const member = await currentMember(Astro);
+if (!member && !legacyTestAuth()) return Astro.redirect('/sign-in?next=/submit');
+if (member && !member.email) return Astro.redirect('/manage-prints#find-prints');
 const materials = await listMaterialsWithColors();
-const cookieToken = Astro.cookies.get(VERIFIED_EMAIL_COOKIE)?.value ?? null;
+const cookieToken = member ? null : Astro.cookies.get(VERIFIED_EMAIL_COOKIE)?.value ?? null;
 const verified = unsealVerifiedEmail(cookieToken);
 if (cookieToken && !verified) {
   Astro.cookies.delete(VERIFIED_EMAIL_COOKIE, { path: '/' });
@@ -19,7 +24,8 @@ if (cookieToken && !verified) {
 
   <SubmissionForm
     initialMaterials={materials}
-    initialVerifiedEmail={verified?.email ?? null}
+    initialVerifiedEmail={member?.email ?? verified?.email ?? null}
+    accountEmail={Boolean(member)}
     initialVerifiedToken={verified ? cookieToken : null}
     initialVerifiedExpires={verified?.expires ?? null}
     client:load

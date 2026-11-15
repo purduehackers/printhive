@@ -9,6 +9,7 @@ import { thumbnailURL } from './thumbnails';
 
 const DEVICE_COOKIE = 'printhive_push_device';
 const EVENT_TTL = 60 * 60 * 1000;
+const allowsLegacyRecipients = () => process.env.NODE_ENV === 'test';
 type CookieContext = Pick<APIContext, 'cookies'>;
 interface Subscription { endpoint: string; keys: { p256dh: string; auth: string } }
 export interface PushMessage { eventId: string; title: string; body: string; url: string; thumbnail?: string }
@@ -70,18 +71,23 @@ export async function revokeDevice(context: CookieContext, keepOperatorId?: numb
 
 // Called within the same transaction that first confirms these jobs. Recipients are
 // snapshotted now so newly enabled devices do not receive the old queue backlog.
-export async function recordQueuePush(tx: DatabaseQueries, jobIds: string[], now: number) {
+export async function recordQueuePush(tx: DatabaseQueries, jobIds: string[], now: number,
+  kind: 'submission' | 'settings' | 'cancellation' = 'submission') {
   if (!jobIds.length) return;
   const id = randomUUID();
   const [job] = await tx`SELECT title, batch_title, email FROM jobs WHERE id = ${jobIds[0]}`;
   invariant(job, 404, 'Print not found.');
   // Save the submitted details with the event so retries retain the same alert.
-  const title = job.batch_title || job.title;
-  await tx`INSERT INTO push_events (id, print_count, created_at, expires_at, submission_title, submitter_email)
-    VALUES (${id}, ${jobIds.length}, ${now}, ${now + EVENT_TTL}, ${title}, ${job.email})`;
-  for (const jobId of jobIds) await tx`INSERT INTO push_event_jobs (job_id, event_id) VALUES (${jobId}, ${id})`;
+  const title = kind === 'submission' ? job.batch_title || job.title : job.title;
+  await tx`INSERT INTO push_events (id, print_count, created_at, expires_at, submission_title, submitter_email, kind)
+    VALUES (${id}, ${jobIds.length}, ${now}, ${now + EVENT_TTL}, ${title}, ${job.email}, ${kind})`;
+  // A job belongs to one new-submission alert. Later alerts use the saved title.
+  if (kind === 'submission') {
+    for (const jobId of jobIds) await tx`INSERT INTO push_event_jobs (job_id, event_id) VALUES (${jobId}, ${id})`;
+  }
   await tx`INSERT INTO push_deliveries (event_id, subscription_id, next_attempt_at)
-    SELECT ${id}, s.id, ${now} FROM push_subscriptions s JOIN operators o ON o.id = s.operator_id WHERE o.active = 1`;
+    SELECT ${id}, s.id, ${now} FROM push_subscriptions s JOIN operators o ON o.id = s.operator_id
+    WHERE o.active = 1 AND (o.id_subject IS NOT NULL OR ${allowsLegacyRecipients()})`;
 }
 
 export class PushDeliveryError extends Error {
@@ -138,12 +144,13 @@ export async function dispatchPush(now = Date.now(), sender: Sender = sendPush) 
     ) RETURNING event_id, subscription_id, attempts`;
   });
   await Promise.all(due.map(async delivery => {
-    const [row] = await sql.begin(async tx => tx`SELECT s.endpoint, s.p256dh, s.auth, e.print_count, e.expires_at, e.submission_title, e.submitter_email,
+    const [row] = await sql.begin(async tx => tx`SELECT s.endpoint, s.p256dh, s.auth, e.print_count, e.expires_at, e.submission_title, e.submitter_email, e.kind,
       (SELECT j.id FROM push_event_jobs ej JOIN jobs j ON j.id = ej.job_id
         WHERE ej.event_id = e.id AND j.has_thumbnail = 1 ORDER BY j.created_at, j.id LIMIT 1) AS thumbnail_id
       FROM push_subscriptions s JOIN operators o ON o.id = s.operator_id
       JOIN push_events e ON e.id = ${delivery.event_id}
-      WHERE s.id = ${delivery.subscription_id} AND o.active = 1 AND e.expires_at > ${Date.now()}`);
+      WHERE s.id = ${delivery.subscription_id} AND o.active = 1 AND (o.id_subject IS NOT NULL OR ${allowsLegacyRecipients()})
+        AND e.expires_at > ${Date.now()}`);
     if (!row) {
       await sql.begin(async tx => tx`UPDATE push_deliveries SET failed_at = ${now} WHERE event_id = ${delivery.event_id} AND subscription_id = ${delivery.subscription_id}`);
       return;
@@ -151,8 +158,10 @@ export async function dispatchPush(now = Date.now(), sender: Sender = sendPush) 
     try {
       await sender({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, {
         eventId: delivery.event_id,
-        title: row.submission_title,
-        body: `${row.print_count} ${row.print_count === 1 ? 'file' : 'files'} · ${row.submitter_email}`, url: '/operator',
+        title: row.kind === 'submission' ? row.submission_title : row.kind === 'settings' ? 'Print settings changed' : 'Print canceled',
+        body: row.kind === 'submission' ? `${row.print_count} ${row.print_count === 1 ? 'file' : 'files'} · ${row.submitter_email}`
+          : `${row.submission_title} · ${row.submitter_email}`,
+        url: '/operator',
         ...(row.thumbnail_id ? { thumbnail: thumbnailURL(row.thumbnail_id) } : {}),
       }, Math.max(1, Math.ceil((row.expires_at - Date.now()) / 1000)));
       await sql.begin(async tx => tx`UPDATE push_deliveries SET sent_at = ${Date.now()}, lease_until = 0

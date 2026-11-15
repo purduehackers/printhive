@@ -44,6 +44,7 @@ beforeAll(async () => {
   process.env.CONFIRMATION_SECRET = 'a'.repeat(64);
   process.env.APP_ORIGIN = 'http://localhost:4321';
   process.env.NODE_ENV = 'test';
+  process.env.PRINTHIVE_TEST_LEGACY_AUTH = 'true';
   smtp = createServer(socket => {
     smtpSockets.add(socket); socket.on('close', () => smtpSockets.delete(socket)); socket.on('error', () => {});
     socket.setEncoding('utf8'); socket.write('220 localhost ESMTP test sink\r\n');

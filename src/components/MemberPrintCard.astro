@@ -1,0 +1,100 @@
+---
+import { canManagePrint } from '../lib/server/member-jobs';
+import { INFILLS, LAYERS, reference, SUPPORTS, supportLabel, WALLS, type Job, type Material } from '../lib/shared';
+import PrintSettingsSummary from './PrintSettingsSummary';
+
+interface Props {
+  job: Job;
+  materials: Material[];
+  grouped: boolean;
+  draft?: URLSearchParams;
+  conflict: boolean;
+  error: string;
+  message: string;
+}
+const { job, materials, grouped, draft, conflict, error, message } = Astro.props;
+const editable = canManagePrint(job);
+const title = grouped ? job.original_filename || job.title : job.title;
+const date = new Date(job.created_at);
+const dateLabel = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'America/Indiana/Indianapolis' }).format(date);
+const printUrl = '/manage-prints?' + new URLSearchParams({ print: job.id }) + '#print-' + job.id;
+const filament = draft?.get('filament') ?? JSON.stringify([job.material, job.color]);
+const hasFilament = materials.some(material =>
+  material.colors.some(color => JSON.stringify([material.name, color.name]) === filament));
+const swatch = materials.find(material => material.name === job.material)?.colors.find(color => color.name === job.color);
+---
+<article class="member-print" id={'print-' + job.id}>
+  <div class="card-top member-print-header">
+    <div>
+      {grouped ? <h3>{title}</h3> : <h2>{title}</h2>}
+      <p class="small"><span class="mono">#{reference(job.id)}</span> · <time datetime={date.toISOString()}>{dateLabel}</time></p>
+    </div>
+    <span class:list={['status', job.status]}>{job.status}</span>
+  </div>
+  <PrintSettingsSummary job={job} colorCode={swatch?.code} />
+  {message && <p class="notice" role="status">{message}</p>}
+  {error && <p class="notice error" role="alert">{error}{conflict && <> <a href={printUrl}>Review latest settings</a></>}</p>}
+  {!editable && <p class="small">{job.started_at != null ? 'This print has started. Settings and cancellation are locked.' : 'Only queued prints can be edited or canceled.'}</p>}
+  {(editable || draft) && <details class="member-print-action" open={draft ? true : undefined}>
+    <summary>{conflict ? 'Your unsaved settings' : 'Edit settings'}</summary>
+    <form method="post" action={printUrl} data-member-edit>
+      <input type="hidden" name="id" value={job.id} />
+      <input type="hidden" name="version" value={job.version} />
+      <fieldset disabled={!editable || conflict}>
+        <legend class="sr-only">Print settings</legend>
+        <div class="field-grid">
+          <label>Filament <select name="filament" required>
+            {!hasFilament && <option value="" disabled selected>Choose available filament</option>}
+            {materials.map(material => <optgroup label={material.name}>{material.colors.map(color => {
+              const value = JSON.stringify([material.name, color.name]);
+              return <option value={value} selected={value === filament}>{color.name}</option>;
+            })}</optgroup>)}
+          </select></label>
+          <label>Infill <select name="infill">{INFILLS.map(value => <option value={value} selected={String(value) === (draft?.get('infill') ?? String(job.infill))}>{value}%</option>)}</select></label>
+          <label>Number of walls <select name="walls">{WALLS.map(value => <option value={value} selected={String(value) === (draft?.get('walls') ?? String(job.walls))}>{value}</option>)}</select></label>
+          <label>Layer height <select name="layer_height">{LAYERS.map(value => <option value={value} selected={String(value) === (draft?.get('layer_height') ?? String(job.layer_height))}>{value} mm</option>)}</select></label>
+          <label>Supports <select name="supports">{SUPPORTS.map(value => <option value={value} selected={value === (draft?.get('supports') ?? job.supports)}>{supportLabel(value)}</option>)}</select></label>
+          <label data-support-angle>Support overhang angle (°)
+            <input name="support_angle" type="number" min="0" max="90" step="1" placeholder="Default" value={draft?.get('support_angle') ?? job.support_angle ?? ''} />
+            <span class="small">Leave blank to use the printer default.</span>
+          </label>
+          <label>Copies <input name="copies" type="number" min="1" max="5" value={draft?.get('copies') ?? job.copies} required /></label>
+        </div>
+        <label>Notes <textarea name="notes" maxlength="5000" rows="3">{draft?.get('notes') ?? job.notes}</textarea></label>
+        {editable && !conflict && <>
+          <p class="small">Saving changes notifies operators and keeps your place in the queue.</p>
+          <div class="member-actions">
+            <button class="button primary" name="action" value="settings">Save changes</button>
+            <a href={printUrl}>Discard changes</a>
+          </div>
+        </>}
+      </fieldset>
+    </form>
+  </details>}
+  {editable && <details class="member-print-action member-cancel">
+    <summary>Cancel print</summary>
+    <form method="post" action={printUrl}>
+      <input type="hidden" name="id" value={job.id} />
+      <input type="hidden" name="version" value={job.version} />
+      <p>Remove <strong>{title}</strong> from the queue and notify the operators?</p>
+      <div class="member-actions">
+        <a href={printUrl}>Keep print</a>
+        <button class="button secondary" name="action" value="cancellation">Cancel print</button>
+      </div>
+    </form>
+  </details>}
+</article>
+<script>
+  for (const editor of document.querySelectorAll<HTMLFormElement>('[data-member-edit]')) {
+    const supports = editor.querySelector<HTMLSelectElement>('select[name=supports]');
+    const angle = editor.querySelector<HTMLElement>('[data-support-angle]');
+    const input = angle?.querySelector('input');
+    if (!supports || !angle || !input) continue;
+    const syncAngle = () => {
+      angle.hidden = supports.value === 'none';
+      input.disabled = angle.hidden;
+    };
+    supports.addEventListener('change', syncAngle);
+    syncAngle();
+  }
+</script>

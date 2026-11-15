@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { clientIP, errorResponse, json, rateLimit, smallBody } from '../../lib/server/http';
 import { reserve, reserveBatch, upload, finalizeBatch, publicQueue, updateStatus, batchUpdateStatus, updateJobGroup, resendNotification, resendBatchNotifications } from '../../lib/server/jobs';
-import { login, logout, requireOperator } from '../../lib/server/auth';
+import { legacyTestAuth, login, logout, requireOperator } from '../../lib/server/auth';
 import { db } from '../../lib/server/db';
 import { filePath } from '../../lib/server/storage';
 import { invariant } from '../../lib/server/errors';
@@ -14,12 +14,23 @@ import { createSlicerProject, downloadSlicerProject } from '../../lib/server/sli
 import { operatorQueue } from '../../lib/server/jobs';
 import { pushStatus, subscribeDevice, revokeDevice, testDevice } from '../../lib/server/push';
 import { requestCancellation } from '../../lib/server/cancellations';
+import { MEMBER_COOKIE, requireMember } from '../../lib/server/member-auth';
+
+async function submissionAccount(context: Parameters<APIRoute>[0]) {
+  if (legacyTestAuth() && !context.cookies.has(MEMBER_COOKIE)) {
+    return { verifiedEmail: getVerifiedEmail(context), memberId: null };
+  }
+  const member = await requireMember(context);
+  invariant(member.email, 403, 'Verify your Purdue email in Manage prints first.');
+  return { verifiedEmail: member.email, memberId: member.id };
+}
 
 export const ALL: APIRoute = async (context) => {
   const { request, params } = context, path = params.path ?? '', method = request.method;
   try {
     if (path === 'queue' && method === 'GET') return json(await publicQueue());
     if (path === 'cancellations' && method === 'POST') {
+      invariant(legacyTestAuth(), 404, 'Sign in and open Manage prints to cancel a print.');
       rateLimit('cancellation-ip:' + clientIP(context), 10, 15 * 60 * 1000);
       const body = await smallBody(request);
       invariant(body && typeof body === 'object', 400, 'Select the prints to cancel.');
@@ -62,21 +73,26 @@ export const ALL: APIRoute = async (context) => {
     }
     if (path === 'submissions' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
+      const account = await submissionAccount(context);
       const body = await smallBody(request);
-      return json(await reserve(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
+      return json(await reserve(account.memberId ? { ...body, email: account.verifiedEmail } : body, account), 201);
     }
     if (path === 'submissions/batch' && method === 'POST') {
       rateLimit('submit:' + clientIP(context), 15, 3600000);
+      const account = await submissionAccount(context);
       const body = await smallBody(request);
-      return json(await reserveBatch(body, { verifiedEmail: getVerifiedEmail(context) }), 201);
+      return json(await reserveBatch(account.memberId ? { ...body, email: account.verifiedEmail } : body, account), 201);
     }
     if (path === 'submissions/batch/finalize' && method === 'POST') {
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
-      return json(await finalizeBatch(token, undefined, { verifiedEmail: getVerifiedEmail(context) }));
+      return json(await finalizeBatch(token, undefined, await submissionAccount(context)));
     }
     const uploadMatch = /^submissions\/([a-f0-9-]{36})\/file$/.exec(path);
     const thumbnailUpload = /^submissions\/([a-f0-9-]{36})\/thumbnail$/.exec(path);
     if (thumbnailUpload && method === 'PUT') {
+      const account = await submissionAccount(context);
+      const [job] = await (await db())`SELECT id FROM jobs WHERE id = ${thumbnailUpload[1]} AND member_id IS ${account.memberId}`;
+      invariant(job, 404, 'Print not found.');
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       await storeThumbnail(thumbnailUpload[1], token, request);
       return json({ ok: true });
@@ -89,9 +105,10 @@ export const ALL: APIRoute = async (context) => {
       return await readThumbnail(thumbnailRead[1], token ? undefined : request);
     }
     if (uploadMatch && method === 'PUT') {
+      const account = await submissionAccount(context);
       const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       const deferEmail = new URL(request.url).searchParams.get('batch') === '1';
-      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail, verifiedEmail: getVerifiedEmail(context) }));
+      return json(await upload(uploadMatch[1], token, request, undefined, { deferEmail, ...account }));
     }
     if (path === 'login' && method === 'POST') {
       rateLimit('login:' + clientIP(context), 10, 900000);
@@ -102,7 +119,7 @@ export const ALL: APIRoute = async (context) => {
       return json({ ok: true });
     }
     if (path === 'logout' && method === 'POST') {
-      await logout(context); return context.redirect('/operator/login', 303);
+      await logout(context); return context.redirect(legacyTestAuth() ? '/operator/login' : '/', 303);
     }
     if (path === 'materials' && method === 'GET') {
       return json(await listMaterialsWithColors());
@@ -144,14 +161,14 @@ export const ALL: APIRoute = async (context) => {
       rateLimit('materials:' + actor.id, 60, 900000);
       return json({ materials: await setDefaultColor(actor.id, materialId, colorId) });
     }
-    if (path === 'operators' && ['GET', 'POST'].includes(method)) {
+    if (path === 'operators' && ['GET', 'POST'].includes(method) && legacyTestAuth()) {
       const actor = await requireOperator(context);
       if (method === 'GET') return json(await listOperators());
       rateLimit('operators:' + actor.id, 60, 900000);
       return json({ operator: await addOperator(actor.id, await smallBody(request)) }, 201);
     }
     const operatorMatch = /^operators\/([1-9][0-9]*)$/.exec(path);
-    if (operatorMatch && ['PATCH', 'DELETE'].includes(method)) {
+    if (operatorMatch && ['PATCH', 'DELETE'].includes(method) && legacyTestAuth()) {
       const actor = await requireOperator(context), id = Number(operatorMatch[1]);
       invariant(Number.isSafeInteger(id), 400, 'Invalid operator ID.');
       rateLimit('operators:' + actor.id, 60, 900000);
@@ -190,6 +207,10 @@ export const ALL: APIRoute = async (context) => {
       invariant(body && typeof body === 'object', 400, 'Invalid status update.');
       rateLimit('status:' + operator.id, 120, 900000);
       const items = (body as any).items ?? (body as any).ids;
+      if (!legacyTestAuth() && body.status === 'printing') {
+        invariant(Array.isArray(items) && items.every(item => item && Number.isSafeInteger(item.version)),
+          400, 'Refresh the selected prints before starting them.');
+      }
       return json(await batchUpdateStatus(items, (body as any).status, operator.id, { feedback: (body as any).feedback }));
     }
     const notifyMatch = /^jobs\/([a-f0-9-]{36})\/notify$/.exec(path);

@@ -1,8 +1,17 @@
 ---
 import '../styles/global.css';
 import '../styles/installed-app.css';
+import '../styles/member.css';
+import { currentMember } from '../lib/server/member-auth';
+import { currentOperator, legacyTestAuth } from '../lib/server/auth';
 interface Props { title?: string; active?: string }
 const { title = 'Print queue', active = '' } = Astro.props;
+const member = await currentMember(Astro);
+const operator = await currentOperator(Astro);
+const accountName = member?.provider === 'hive'
+  ? member.subject.replace(/@purdue\.edu$/i, '')
+  : member?.display_name || 'Purdue Hackers ID';
+if (member) Astro.response.headers.set('Cache-Control', 'private, no-store');
 ---
 <!doctype html>
 <html lang="en">
@@ -18,9 +27,22 @@ const { title = 'Print queue', active = '' } = Astro.props;
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="site-header">
+    <header class:list={['site-header', { 'has-account': member }]}>
       <a class="brand" href="/" aria-label="PrintHive home"><svg width="32" height="36" viewBox="0 0 32 36" fill="none" aria-hidden="true"><path d="M16 2 30 10v16L16 34 2 26V10L16 2Z" stroke="currentColor" stroke-width="2.5"/><path d="m2 10 14 8 14-8M16 18v16M9 6l14 8v9" stroke="currentColor" stroke-width="2.5"/></svg><span>Print<span class="brand-light">Hive</span></span></a>
-      <nav aria-label="Main navigation"><a href="/" aria-current={active === 'queue' ? 'page' : undefined}>Queue</a><a href="/submit" aria-current={active === 'submit' ? 'page' : undefined}>Submit a print</a><a class="operator-link" href="/operator" aria-current={active === 'operator' ? 'page' : undefined}>Operators</a></nav>
+      <nav aria-label="Main navigation">
+        <a href="/" aria-current={active === 'queue' ? 'page' : undefined}>Queue</a>
+        {member || legacyTestAuth() ? <>
+          <a href="/submit" aria-current={active === 'submit' ? 'page' : undefined}>Submit a print</a>
+          {member && <a href="/manage-prints" aria-current={active === 'manage' ? 'page' : undefined}>Manage prints</a>}
+        </> : <a href="/sign-in" aria-current={active === 'sign-in' ? 'page' : undefined}>Sign in</a>}
+        {operator && <a href="/operator" aria-current={Astro.url.pathname === '/operator' ? 'page' : undefined}>Operator Dashboard</a>}
+      </nav>
+      {member && <div class="member-account">
+        <span class="member-account-name" title={accountName}>{accountName}</span>
+        <form method="post" action="/api/logout">
+          <button type="submit" class="member-sign-out">Sign out</button>
+        </form>
+      </div>}
     </header>
     <main id="main"><slot /></main>
   </body>

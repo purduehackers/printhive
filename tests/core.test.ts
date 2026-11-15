@@ -33,6 +33,7 @@ async function queued() { const r = await ready(); await confirmation(r.token, t
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'printhive-test-'));
   process.env.DATA_DIR = dir; process.env.CONFIRMATION_SECRET = 'a'.repeat(64); process.env.APP_ORIGIN = 'http://localhost:4321'; process.env.NODE_ENV = 'test';
+  process.env.PRINTHIVE_TEST_LEGACY_AUTH = 'true';
   await migrate();
   const sql = await db(); await sql`INSERT INTO operators (id, username, password_hash) VALUES (1, 'operator', 'test')`;
 });

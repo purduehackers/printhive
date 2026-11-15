@@ -86,6 +86,8 @@ export interface PublicJob extends PrintSettings {
   batch_id?: string | null; batch_title?: string | null; group_name?: string | null;
 }
 export interface Job extends Omit<PublicJob, 'status'> {
+  member_id?: string | null;
+  started_at?: number | null;
   has_thumbnail?: number;
   status: Status | 'pending_confirmation'; email: string; notes: string; original_filename: string;
   storage_key: string; file_size: number; upload_state: 'reserved' | 'uploading' | 'uploaded' | 'ready';
